@@ -4,125 +4,109 @@ struct KeyboardRootView: View {
     @ObservedObject var model: KeyboardModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            statusBar
-            Spacer(minLength: 0)
+        VStack(spacing: 6) {
             centerStage
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             keyRow
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
         .padding(.bottom, 6)
         .tint(FlowBrand.accent)
     }
 
-    // MARK: top status line
-
-    private var statusBar: some View {
-        HStack {
-            Text(statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
-            if isSessionActive {
-                Button {
-                    model.endSessionTapped()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("End Flow Session")
-            }
-        }
-        .frame(height: 22)
-    }
-
-    private var isSessionActive: Bool {
-        switch model.state {
-        case .ready, .recording, .transcribing, .loading: true
-        default: false
-        }
-    }
-
-    private var statusText: String {
-        switch model.state {
-        case .needsFullAccess: "Full Access needed"
-        case .noSession: "FlowBoard"
-        case .loading: "FlowBoard — preparing"
-        case .ready: model.justInserted ? "Inserted ✓" : "FlowBoard — session active"
-        case .recording: "Listening…"
-        case .transcribing: "Transcribing…"
-        }
-    }
-
-    // MARK: center stage
+    // MARK: center stage — one compact row per state
 
     @ViewBuilder
     private var centerStage: some View {
         switch model.state {
         case .needsFullAccess:
-            VStack(spacing: 8) {
+            VStack(spacing: 2) {
                 Text("Turn on Full Access for FlowBoard")
-                    .font(.subheadline.weight(.semibold))
-                Text("Settings → General → Keyboard → Keyboards → FlowBoard → Allow Full Access")
-                    .font(.caption)
+                    .font(.footnote.weight(.semibold))
+                Text("Settings → General → Keyboard → Keyboards → FlowBoard")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
                     .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
 
         case .noSession:
-            VStack(spacing: 10) {
+            HStack(spacing: 12) {
                 // A real SwiftUI Link, not a button with an openURL hack:
                 // iOS 18 killed every selector-based route to UIApplication
                 // from keyboard extensions, but a genuine link tap is still
                 // allowed to open the containing app.
                 Link(destination: Flow.startSessionURL) {
                     Label("Start Flow Session", systemImage: "waveform")
-                        .font(.headline)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 12)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
                         .background(Capsule().fill(.tint))
                         .foregroundStyle(.white)
                 }
-                Text("Opens FlowBoard for a moment, then swipe back and dictate.")
+                Text("Opens FlowBoard, then swipe back.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
 
         case .loading(let status):
-            VStack(spacing: 10) {
+            HStack(spacing: 10) {
                 ProgressView()
                 Text(status.isEmpty ? "Preparing model…" : status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
                     .lineLimit(2)
+                endButton
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 4)
 
         case .ready:
-            micButton(recording: false)
+            HStack(spacing: 12) {
+                micButton(recording: false)
+                Text(model.justInserted ? "Inserted ✓" : "Tap to dictate")
+                    .font(.caption)
+                    .foregroundStyle(model.justInserted ? .primary : .secondary)
+                Spacer(minLength: 0)
+                endButton
+            }
+            .padding(.horizontal, 4)
 
         case .recording:
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 micButton(recording: true)
                 KeyboardLevelMeter(level: model.micLevel)
                     .frame(height: 20)
+                Spacer(minLength: 0)
+                endButton
             }
+            .padding(.horizontal, 4)
 
         case .transcribing:
-            VStack(spacing: 10) {
+            HStack(spacing: 12) {
                 ProgressView()
+                    .frame(width: 52, height: 52)
                 Text("Transcribing…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                endButton
             }
+            .padding(.horizontal, 4)
         }
+    }
+
+    private var endButton: some View {
+        Button {
+            model.endSessionTapped()
+        } label: {
+            Image(systemName: "xmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityLabel("End Flow Session")
     }
 
     private func micButton(recording: Bool) -> some View {
@@ -132,11 +116,11 @@ struct KeyboardRootView: View {
             ZStack {
                 Circle()
                     .fill(recording ? Color.red : FlowBrand.accent)
-                    .frame(width: 62, height: 62)
+                    .frame(width: 52, height: 52)
                     .shadow(color: (recording ? Color.red : FlowBrand.accent).opacity(0.35),
-                            radius: recording ? 12 : 7)
+                            radius: recording ? 10 : 6)
                 Image(systemName: recording ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 23, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
             }
         }
@@ -150,16 +134,16 @@ struct KeyboardRootView: View {
         HStack(spacing: 8) {
             if model.showsGlobe {
                 GlobeKey(controller: model.globeController)
-                    .frame(width: 44, height: 40)
+                    .frame(width: 44, height: 38)
                     .background(keyBackground)
             }
             key("space", flexible: true) { model.spaceTapped() }
             RepeatKey(systemName: "delete.left") { model.deleteTapped() }
-                .frame(width: 44, height: 40)
+                .frame(width: 44, height: 38)
                 .background(keyBackground)
             key("return") { model.returnTapped() }
         }
-        .frame(height: 42)
+        .frame(height: 38)
     }
 
     private var keyBackground: some View {
@@ -173,17 +157,7 @@ struct KeyboardRootView: View {
                 .font(.subheadline)
                 .frame(maxWidth: flexible ? .infinity : nil)
                 .padding(.horizontal, flexible ? 0 : 16)
-                .frame(height: 40)
-                .background(keyBackground)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func keyIcon(_ systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.subheadline)
-                .frame(width: 44, height: 40)
+                .frame(height: 38)
                 .background(keyBackground)
         }
         .buttonStyle(.plain)

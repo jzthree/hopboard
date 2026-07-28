@@ -29,10 +29,10 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Custom keyboards choose their own height; Apple sets no minimum.
-        // 180 pt is deliberately shorter than the ~216 pt system keyboard —
-        // a remote control doesn't need a letter grid's real estate.
+        // 124 pt ≈ 57% of the ~216 pt system keyboard: one mic/status row
+        // and one key row — a remote control, not a letter grid.
         if heightConstraint == nil {
-            let constraint = view.heightAnchor.constraint(equalToConstant: 180)
+            let constraint = view.heightAnchor.constraint(equalToConstant: 124)
             constraint.priority = .init(999)
             constraint.isActive = true
             heightConstraint = constraint
