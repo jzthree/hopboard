@@ -24,6 +24,10 @@ final class SessionManager: ObservableObject {
     /// abandoned session doesn't hold the mic (and the orange dot) all day.
     static let idleTimeout: TimeInterval = 15 * 60
 
+    /// UserDefaults key for the user's custom Whisper initial prompt
+    /// (edited in ContentView via @AppStorage).
+    static let promptKey = "flow.promptText"
+
     init() {
         transcripts = store.results
         // A fresh launch means any previous session died with the process.
@@ -102,10 +106,11 @@ final class SessionManager: ObservableObject {
         guard state == .recording else { return }
         let samples = recorder.takeSegment()
         publish(.transcribing)
+        let prompt = UserDefaults.standard.string(forKey: Self.promptKey)
         Task {
             var text = ""
             do {
-                text = try await transcriber?.transcribe(samples) ?? ""
+                text = try await transcriber?.transcribe(samples, prompt: prompt) ?? ""
             } catch {
                 lastError = "Transcription failed: \(error.localizedDescription)"
             }

@@ -65,10 +65,6 @@ final class KeyboardModel: ObservableObject {
 
     // MARK: user actions
 
-    func startSessionTapped() {
-        controller?.openMainApp()
-    }
-
     func micTapped() {
         switch state {
         case .ready:

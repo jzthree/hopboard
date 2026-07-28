@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var session: SessionManager
+    @State private var copiedResultID: UUID?
+    @AppStorage(SessionManager.promptKey) private var promptText = ""
 
     var body: some View {
         NavigationStack {
@@ -14,6 +16,7 @@ struct ContentView: View {
                             .font(.callout)
                     }
                 }
+                promptSection
                 setupSection
                 historySection
             }
@@ -140,6 +143,21 @@ struct ContentView: View {
         }
     }
 
+    // MARK: custom prompt
+
+    private var promptSection: some View {
+        Section {
+            TextField("Names, jargon, punctuation style…",
+                      text: $promptText, axis: .vertical)
+                .lineLimit(2...4)
+                .autocorrectionDisabled()
+        } header: {
+            Text("Custom vocabulary & style")
+        } footer: {
+            Text("Fed to Whisper as its initial prompt before every dictation — write names and jargon the way you want them spelled, in the punctuation style you want back. Applies from your next dictation.")
+        }
+    }
+
     // MARK: setup checklist
 
     private var setupSection: some View {
@@ -185,18 +203,39 @@ struct ContentView: View {
             } else {
                 ForEach(session.transcripts.reversed()) { result in
                     Button {
+                        guard !result.text.isEmpty else { return }
                         UIPasteboard.general.string = result.text
+                        copiedResultID = result.id
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            if copiedResultID == result.id { copiedResultID = nil }
+                        }
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(result.text.isEmpty ? "(no speech detected)" : result.text)
-                                .foregroundStyle(result.text.isEmpty ? .secondary : .primary)
-                            Text(Date(timeIntervalSince1970: result.finishedAt),
-                                 format: .dateTime.hour().minute())
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(result.text.isEmpty ? "(no speech detected)" : result.text)
+                                    .foregroundStyle(result.text.isEmpty ? .secondary : .primary)
+                                Text(Date(timeIntervalSince1970: result.finishedAt),
+                                     format: .dateTime.hour().minute())
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Spacer(minLength: 0)
+                            if !result.text.isEmpty {
+                                if copiedResultID == result.id {
+                                    Label("Copied", systemImage: "checkmark")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.green)
+                                } else {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                     .buttonStyle(.plain)
+                    .animation(.snappy, value: copiedResultID)
                 }
             }
         } header: {

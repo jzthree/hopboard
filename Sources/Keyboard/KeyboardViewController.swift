@@ -65,28 +65,6 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     var keyboardHasFullAccess: Bool { hasFullAccess }
-
-    /// Extensions cannot call UIApplication.open; the sanctioned-in-practice
-    /// route is extensionContext, with the responder-chain openURL: fallback.
-    func openMainApp() {
-        let url = Flow.startSessionURL
-        extensionContext?.open(url) { [weak self] success in
-            guard !success else { return }
-            DispatchQueue.main.async { self?.openViaResponderChain(url) }
-        }
-    }
-
-    private func openViaResponderChain(_ url: URL) {
-        let selector = sel_registerName("openURL:")
-        var responder: UIResponder? = self
-        while let current = responder {
-            if current.responds(to: selector), !(current is UIInputViewController) {
-                current.perform(selector, with: url)
-                return
-            }
-            responder = current.next
-        }
-    }
 }
 
 /// The required input-mode switch key. UIKit needs the raw control events

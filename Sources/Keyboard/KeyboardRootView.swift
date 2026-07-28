@@ -76,9 +76,11 @@ struct KeyboardRootView: View {
 
         case .noSession:
             VStack(spacing: 10) {
-                Button {
-                    model.startSessionTapped()
-                } label: {
+                // A real SwiftUI Link, not a button with an openURL hack:
+                // iOS 18 killed every selector-based route to UIApplication
+                // from keyboard extensions, but a genuine link tap is still
+                // allowed to open the containing app.
+                Link(destination: Flow.startSessionURL) {
                     Label("Start Flow Session", systemImage: "waveform")
                         .font(.headline)
                         .padding(.horizontal, 22)
@@ -86,7 +88,6 @@ struct KeyboardRootView: View {
                         .background(Capsule().fill(.tint))
                         .foregroundStyle(.white)
                 }
-                .buttonStyle(.plain)
                 Text("Opens FlowBoard for a moment, then swipe back and dictate.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
