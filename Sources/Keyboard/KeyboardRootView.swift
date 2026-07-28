@@ -109,10 +109,10 @@ struct KeyboardRootView: View {
             micButton(recording: false)
 
         case .recording:
-            VStack(spacing: 10) {
+            HStack(spacing: 14) {
                 micButton(recording: true)
                 KeyboardLevelMeter(level: model.micLevel)
-                    .frame(height: 16)
+                    .frame(height: 20)
             }
 
         case .transcribing:
@@ -132,11 +132,11 @@ struct KeyboardRootView: View {
             ZStack {
                 Circle()
                     .fill(recording ? Color.red : FlowBrand.accent)
-                    .frame(width: 84, height: 84)
+                    .frame(width: 62, height: 62)
                     .shadow(color: (recording ? Color.red : FlowBrand.accent).opacity(0.35),
-                            radius: recording ? 14 : 8)
+                            radius: recording ? 12 : 7)
                 Image(systemName: recording ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.system(size: 23, weight: .semibold))
                     .foregroundStyle(.white)
             }
         }

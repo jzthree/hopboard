@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var copiedResultID: UUID?
     @AppStorage(SessionManager.promptKey) private var promptText = ""
     @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
+    @AppStorage(FlowTone.defaultsKey) private var toneRaw = FlowTone.formal.rawValue
 
     /// Whisper's own language table (name → code), prettified and sorted.
     private static let languageChoices: [(name: String, code: String)] =
@@ -159,6 +160,17 @@ struct ContentView: View {
                 Text("Auto-detect").tag("auto")
                 ForEach(Self.languageChoices, id: \.code) { choice in
                     Text(choice.name).tag(choice.code)
+                }
+            }
+            Picker("Tone", selection: $toneRaw) {
+                ForEach(FlowTone.allCases) { tone in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tone.label)
+                        Text(tone.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .tag(tone.rawValue)
                 }
             }
             TextField("Names, jargon, punctuation style…",

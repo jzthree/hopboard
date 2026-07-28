@@ -107,12 +107,17 @@ final class SessionManager: ObservableObject {
         guard state == .recording else { return }
         let samples = recorder.takeSegment()
         publish(.transcribing)
-        let prompt = UserDefaults.standard.string(forKey: Self.promptKey)
         let language = UserDefaults.standard.string(forKey: Self.languageKey)
+        let tone = UserDefaults.standard.string(forKey: FlowTone.defaultsKey)
+            .flatMap(FlowTone.init(rawValue:)) ?? .formal
+        // Tone exemplar first, then the user's vocabulary — one prompt.
+        let userPrompt = UserDefaults.standard.string(forKey: Self.promptKey) ?? ""
+        let prompt = (tone.exemplar + " " + userPrompt).trimmingCharacters(in: .whitespaces)
         Task {
             var text = ""
             do {
                 text = try await transcriber?.transcribe(samples, prompt: prompt, language: language) ?? ""
+                text = tone.apply(to: text)
             } catch {
                 lastError = "Transcription failed: \(error.localizedDescription)"
             }

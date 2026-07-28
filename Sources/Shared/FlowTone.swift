@@ -1,0 +1,96 @@
+import Foundation
+
+/// Wispr-Flow-style tone modes. Each mode works on two levels: an exemplar
+/// sentence prepended to Whisper's initial prompt (soft bias — Whisper
+/// mimics the transcript style it thinks it's continuing) and a
+/// deterministic post-pass that guarantees the capitalization and the
+/// ending, which the prompt alone cannot.
+enum FlowTone: String, CaseIterable, Identifiable {
+    case formal, casual, veryCasual, excited
+
+    static let defaultsKey = "flow.tone"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .formal: "Formal"
+        case .casual: "Casual"
+        case .veryCasual: "Very casual"
+        case .excited: "Excited"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .formal: "Full sentences. Capitalized, ends with a period."
+        case .casual: "Keeps caps, drops the trailing period"
+        case .veryCasual: "all lowercase, like texting"
+        case .excited: "Ends with an exclamation mark!"
+        }
+    }
+
+    /// Prepended to the initial prompt so Whisper leans toward the style.
+    var exemplar: String {
+        switch self {
+        case .formal:
+            "Here is the transcript. It is written carefully, with proper capitalization and punctuation."
+        case .casual:
+            "Here's the transcript, keeping things relaxed and natural"
+        case .veryCasual:
+            "heres the transcript just super relaxed like a text no caps or dots"
+        case .excited:
+            "Here's the transcript! It's so exciting! I love where this is going!"
+        }
+    }
+
+    /// Deterministic style guarantees, applied after transcription.
+    func apply(to text: String) -> String {
+        guard !text.isEmpty else { return text }
+        switch self {
+        case .formal:
+            var result = Self.capitalizingFirst(text)
+            if !Self.hasTerminalPunctuation(result) {
+                result += Self.isCJK(result) ? "。" : "."
+            }
+            return result
+        case .casual:
+            return Self.strippingTrailingPeriod(text)
+        case .veryCasual:
+            return Self.strippingTrailingPeriod(text).lowercased()
+        case .excited:
+            var result = Self.strippingTrailingPeriod(Self.capitalizingFirst(text))
+            if let last = result.unicodeScalars.last, "!?！？…".unicodeScalars.contains(last) {
+                return result
+            }
+            result += Self.isCJK(result) ? "！" : "!"
+            return result
+        }
+    }
+
+    // MARK: helpers
+
+    private static func capitalizingFirst(_ text: String) -> String {
+        guard let first = text.first, first.isLowercase else { return text }
+        return first.uppercased() + text.dropFirst()
+    }
+
+    private static func hasTerminalPunctuation(_ text: String) -> Bool {
+        guard let last = text.unicodeScalars.last else { return false }
+        return ".!?。！？…".unicodeScalars.contains(last)
+    }
+
+    /// Drops a single trailing period (Latin or CJK), never an ellipsis.
+    private static func strippingTrailingPeriod(_ text: String) -> String {
+        guard text.hasSuffix(".") || text.hasSuffix("。"),
+              !text.hasSuffix("..."), !text.hasSuffix("…") else { return text }
+        return String(text.dropLast())
+    }
+
+    /// Rough script check so formal/excited endings match the text.
+    private static func isCJK(_ text: String) -> Bool {
+        text.unicodeScalars.reversed().first { $0.properties.isAlphabetic }
+            .map { (0x2E80...0x9FFF).contains(Int($0.value)) || (0x3040...0x30FF).contains(Int($0.value)) }
+            ?? false
+    }
+}
