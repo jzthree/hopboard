@@ -15,6 +15,18 @@ struct FlowBoardApp: App {
                         Task { await session.startSession() }
                     }
                 }
+                .task {
+                    // Dev hooks for driving the sim without UI taps
+                    // (launched via SIMCTL_CHILD_FLOW_AUTO*, like hop-ios).
+                    let env = ProcessInfo.processInfo.environment
+                    guard env["FLOW_AUTOSTART"] == "1" || env["FLOW_AUTOTEST"] == "1" else { return }
+                    await session.startSession()
+                    if env["FLOW_AUTOTEST"] == "1", session.state == .ready {
+                        session.beginSegment()
+                        try? await Task.sleep(for: .seconds(2))
+                        session.finishSegment()
+                    }
+                }
         }
     }
 }

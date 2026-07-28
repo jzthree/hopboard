@@ -65,6 +65,13 @@ actor Transcriber {
         }
         // Whisper hallucinates on sub-second clips; treat them as silence.
         guard samples.count >= Int(AudioRecorder.targetSampleRate / 2) else { return "" }
+        // Energy gate: near-digital-silence makes Whisper hallucinate
+        // ("Thank you." — reproduced in the sim autotest) and burns a full
+        // inference pass. A real mic's noise floor sits well above this.
+        var energy: Float = 0
+        for sample in samples { energy += sample * sample }
+        let rms = (energy / Float(samples.count)).squareRoot()
+        guard rms > 0.0005 else { return "" }
         let results = try await pipe.transcribe(audioArray: samples)
         return results.map(\.text).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)

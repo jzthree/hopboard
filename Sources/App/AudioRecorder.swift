@@ -22,6 +22,41 @@ final class AudioRecorder {
 
     private var levelThrottle = 0
 
+    // The simulator's AURemoteIO aborts with an uncatchable RPC timeout on
+    // inputNode access (host CoreAudio hang, reproduced twice), so the sim
+    // build never touches the engine: segments return synthetic silence,
+    // which still drives the full Whisper pipeline end-to-end.
+    #if targetEnvironment(simulator)
+    private var simRunning = false
+    private var simSegmentStart: Date?
+
+    var isRunning: Bool { simRunning }
+
+    func start() throws {
+        simRunning = true
+    }
+
+    func stop() {
+        simRunning = false
+        simSegmentStart = nil
+    }
+
+    func beginSegment() {
+        simSegmentStart = Date()
+        onLevel?(0.3)
+    }
+
+    func cancelSegment() {
+        simSegmentStart = nil
+    }
+
+    func takeSegment() -> [Float] {
+        guard let start = simSegmentStart else { return [] }
+        simSegmentStart = nil
+        let frames = Int(Date().timeIntervalSince(start) * Self.targetSampleRate)
+        return [Float](repeating: 0, count: min(frames, Int(Self.targetSampleRate) * 240))
+    }
+    #else
     var isRunning: Bool { engine.isRunning }
 
     func start() throws {
@@ -85,6 +120,7 @@ final class AudioRecorder {
         lock.unlock()
         return taken
     }
+    #endif
 
     private func consume(_ buffer: AVAudioPCMBuffer, outputFormat: AVAudioFormat) {
         lock.lock()
