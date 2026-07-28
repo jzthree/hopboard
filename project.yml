@@ -1,0 +1,128 @@
+name: FlowBoard
+options:
+  bundleIdPrefix: io.zhoulab.flowboard
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  ArgmaxOSS:
+    url: https://github.com/argmaxinc/argmax-oss-swift
+    from: 1.0.0
+targets:
+  FlowBoard:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/App
+      - Sources/Shared
+    dependencies:
+      - package: ArgmaxOSS
+        product: WhisperKit
+      - target: FlowBoardKeyboard
+    info:
+      # GENERATED from this block on every `make` — do not edit
+      # Sources/App/Info.plist directly (same trap as hop-ios).
+      path: Sources/App/Info.plist
+      properties:
+        CFBundleDisplayName: FlowBoard
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSMicrophoneUsageDescription: "FlowBoard records only during a Flow Session you start, so the FlowBoard keyboard can transcribe your dictation on-device."
+        # The whole architecture rests on this: the keyboard cannot touch the
+        # mic, so the app keeps an active recording session alive in the
+        # background for the keyboard to drive.
+        UIBackgroundModes: [audio]
+        CFBundleURLTypes:
+          - CFBundleURLName: io.zhoulab.flowboard
+            CFBundleURLSchemes: [flowboard]
+    entitlements:
+      # GENERATED like Info.plist — edit here, not the file.
+      # Keychain group, not an App Group: the ASC API can't register App
+      # Groups and Xcode has no signed-in account, but team dev profiles
+      # carry keychain-access-groups 5AD7QB9795.* — shared storage that
+      # provisions today. See Sources/Shared/FlowIPC.swift.
+      path: FlowBoard.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)io.zhoulab.flowboard.ipc"]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.zhoulab.flowboard
+        DEVELOPMENT_TEAM: 5AD7QB9795
+        # Manual: this machine has no signed-in Xcode account, so the
+        # profiles are minted through the ASC API (scripts/mint_profiles.md)
+        # and pinned by name here.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development"
+        PROVISIONING_PROFILE_SPECIFIER: "FlowBoard Dev"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        CURRENT_PROJECT_VERSION: 1
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  FlowBoardKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Sources/Keyboard
+      - Sources/Shared
+    info:
+      path: Sources/Keyboard/Info.plist
+      properties:
+        CFBundleDisplayName: FlowBoard
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            # Full Access — required for the App Group IPC with the main app.
+            RequestsOpenAccess: true
+    entitlements:
+      path: FlowBoardKeyboard.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)io.zhoulab.flowboard.ipc"]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.zhoulab.flowboard.keyboard
+        DEVELOPMENT_TEAM: 5AD7QB9795
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development"
+        PROVISIONING_PROFILE_SPECIFIER: "FlowBoard Keyboard Dev"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        CURRENT_PROJECT_VERSION: 1
+        SKIP_INSTALL: YES
+
+  FlowBoardTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: FlowBoard
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.zhoulab.flowboard.tests
+        DEVELOPMENT_TEAM: 5AD7QB9795
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/FlowBoard.app/FlowBoard"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  FlowBoard:
+    build:
+      targets:
+        FlowBoard: all
+        FlowBoardTests: [test]
+    test:
+      targets: [FlowBoardTests]
+    archive:
+      config: Release
+    run:
+      config: Debug
