@@ -27,6 +27,13 @@ Sessions auto-end after 15 minutes of inactivity. The orange mic
 indicator stays on for the whole session — that's iOS being honest, not a
 bug.
 
+Transcription is batch per segment (like OpenSuperWhisper): Whisper runs
+after you tap stop, windowing internally in 30 s chunks for long
+dictations (segments cap at 4 min). The **Custom vocabulary & style**
+field in the app mirrors OpenSuperWhisper's `initialPrompt` — it's
+tokenized and fed to Whisper before every dictation to bias name/jargon
+spelling and punctuation style.
+
 ## First-run setup (on the phone)
 
 1. Open **FlowBoard**, tap **Start Flow Session** — grant mic access,
