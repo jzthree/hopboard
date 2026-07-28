@@ -24,9 +24,10 @@ final class SessionManager: ObservableObject {
     /// abandoned session doesn't hold the mic (and the orange dot) all day.
     static let idleTimeout: TimeInterval = 15 * 60
 
-    /// UserDefaults key for the user's custom Whisper initial prompt
-    /// (edited in ContentView via @AppStorage).
+    /// UserDefaults keys for dictation settings (edited in ContentView
+    /// via @AppStorage).
     static let promptKey = "flow.promptText"
+    static let languageKey = "flow.language"   // whisper code, or "auto"
 
     init() {
         transcripts = store.results
@@ -107,10 +108,11 @@ final class SessionManager: ObservableObject {
         let samples = recorder.takeSegment()
         publish(.transcribing)
         let prompt = UserDefaults.standard.string(forKey: Self.promptKey)
+        let language = UserDefaults.standard.string(forKey: Self.languageKey)
         Task {
             var text = ""
             do {
-                text = try await transcriber?.transcribe(samples, prompt: prompt) ?? ""
+                text = try await transcriber?.transcribe(samples, prompt: prompt, language: language) ?? ""
             } catch {
                 lastError = "Transcription failed: \(error.localizedDescription)"
             }

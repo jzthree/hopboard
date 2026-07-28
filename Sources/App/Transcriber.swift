@@ -60,7 +60,8 @@ actor Transcriber {
     /// Transcribes 16 kHz mono samples. Returns trimmed text ("" if silence).
     /// `prompt` mirrors OpenSuperWhisper's initialPrompt: free text that
     /// conditions Whisper's first window — names, jargon, punctuation style.
-    func transcribe(_ samples: [Float], prompt: String? = nil) async throws -> String {
+    /// `language` is a whisper code ("en", "zh", …); nil or "auto" detects.
+    func transcribe(_ samples: [Float], prompt: String? = nil, language: String? = nil) async throws -> String {
         guard let pipe else {
             throw NSError(domain: "FlowBoard", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
@@ -75,6 +76,11 @@ actor Transcriber {
         let rms = (energy / Float(samples.count)).squareRoot()
         guard rms > 0.0005 else { return "" }
         var options = DecodingOptions()
+        if let language, language != "auto" {
+            options.language = language
+        } else {
+            options.detectLanguage = true
+        }
         if let prompt = prompt?.trimmingCharacters(in: .whitespacesAndNewlines),
            !prompt.isEmpty, let tokenizer = pipe.tokenizer {
             options.promptTokens = tokenizer.encode(text: " " + prompt)

@@ -1,9 +1,17 @@
 import SwiftUI
+import WhisperKit
 
 struct ContentView: View {
     @EnvironmentObject private var session: SessionManager
     @State private var copiedResultID: UUID?
     @AppStorage(SessionManager.promptKey) private var promptText = ""
+    @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
+
+    /// Whisper's own language table (name → code), prettified and sorted.
+    private static let languageChoices: [(name: String, code: String)] =
+        Constants.languages
+            .map { (name: $0.key.capitalized, code: $0.value) }
+            .sorted { $0.name < $1.name }
 
     var body: some View {
         NavigationStack {
@@ -147,14 +155,20 @@ struct ContentView: View {
 
     private var promptSection: some View {
         Section {
+            Picker("Language", selection: $languageCode) {
+                Text("Auto-detect").tag("auto")
+                ForEach(Self.languageChoices, id: \.code) { choice in
+                    Text(choice.name).tag(choice.code)
+                }
+            }
             TextField("Names, jargon, punctuation style…",
                       text: $promptText, axis: .vertical)
                 .lineLimit(2...4)
                 .autocorrectionDisabled()
         } header: {
-            Text("Custom vocabulary & style")
+            Text("Dictation")
         } footer: {
-            Text("Fed to Whisper as its initial prompt before every dictation — write names and jargon the way you want them spelled, in the punctuation style you want back. Applies from your next dictation.")
+            Text("Pinning a language is faster and more accurate than auto-detect. The vocabulary field is fed to Whisper as its initial prompt — write names and jargon the way you want them spelled, in the punctuation style you want back. Both apply from your next dictation.")
         }
     }
 
