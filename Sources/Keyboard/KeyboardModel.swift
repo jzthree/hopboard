@@ -17,9 +17,11 @@ final class KeyboardModel: ObservableObject {
     @Published private(set) var showsGlobe = true
     @Published private(set) var justInserted = false
     @Published private(set) var tone: FlowTone = .formal
-    /// Most recent non-empty dictation, for re-inserting when the previous
-    /// one landed nowhere (focus lost, keyboard dismissed mid-transcribe).
-    @Published private(set) var lastText: String?
+    /// Recent non-empty dictations, newest first — browsable from the
+    /// keyboard so a dictation that landed nowhere (focus lost, keyboard
+    /// dismissed mid-transcribe) is recoverable with a preview.
+    @Published private(set) var historyItems: [FlowResult] = []
+    @Published var showingHistory = false
 
     private weak var controller: KeyboardViewController?
     /// The UIKit globe key needs the controller for handleInputModeList.
@@ -59,6 +61,7 @@ final class KeyboardModel: ObservableObject {
     func becameHidden() {
         pollTimer?.invalidate()
         pollTimer = nil
+        showingHistory = false
         // Don't leave the app recording into the void if the user dismissed
         // the keyboard mid-dictation.
         if state == .recording {
@@ -95,11 +98,12 @@ final class KeyboardModel: ObservableObject {
         bus.post(Flow.commandNotification)   // nudges the app UI to re-read
     }
 
-    /// Re-insert the last dictation at the cursor.
-    func insertLastTapped() {
-        guard let lastText, let controller else { return }
+    /// Insert a history item at the cursor (tapped from the preview strip).
+    func insert(_ result: FlowResult) {
+        guard let controller else { return }
         controller.insert(FlowText.smartJoin(before: controller.textBeforeCursor,
-                                             insertion: lastText))
+                                             insertion: result.text))
+        showingHistory = false
         flashInserted()
     }
 
@@ -125,7 +129,7 @@ final class KeyboardModel: ObservableObject {
             return
         }
         tone = store.tone
-        lastText = store.results.last(where: { !$0.text.isEmpty })?.text
+        historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
         consumeResultIfAny()
 
         guard store.sessionAlive else {

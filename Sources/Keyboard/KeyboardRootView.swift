@@ -20,6 +20,50 @@ struct KeyboardRootView: View {
 
     @ViewBuilder
     private var centerStage: some View {
+        if model.showingHistory, model.state == .ready || model.state == .noSession {
+            historyStrip
+        } else {
+            stateStage
+        }
+    }
+
+    /// Scrollable previews of recent dictations; tap one to insert it.
+    private var historyStrip: some View {
+        HStack(spacing: 8) {
+            Button {
+                model.showingHistory = false
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 56)
+            }
+            .buttonStyle(.plain)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(model.historyItems) { result in
+                        Button {
+                            model.insert(result)
+                        } label: {
+                            Text(result.text)
+                                .font(.caption2)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                                .frame(width: 148, alignment: .topLeading)
+                                .padding(7)
+                                .background(RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(.secondarySystemFill)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private var stateStage: some View {
         switch model.state {
         case .needsFullAccess:
             VStack(spacing: 2) {
@@ -50,10 +94,16 @@ struct KeyboardRootView: View {
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
-                Text("Opens FlowBoard, then swipe back here.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                if model.historyItems.isEmpty {
+                    Text("Opens FlowBoard, then swipe back here.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else {
+                    chip("history", icon: "clock.arrow.circlepath") {
+                        model.showingHistory = true
+                    }
+                }
             }
 
         case .loading(let status):
@@ -75,12 +125,12 @@ struct KeyboardRootView: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.green)
                 } else {
-                    chip(model.tone.shortLabel, icon: "textformat") {
+                    chip(model.tone.shortLabel, icon: "wand.and.stars") {
                         model.cycleTone()
                     }
-                    if model.lastText != nil {
-                        chip("last", icon: "arrow.uturn.down") {
-                            model.insertLastTapped()
+                    if !model.historyItems.isEmpty {
+                        chip("history", icon: "clock.arrow.circlepath") {
+                            model.showingHistory = true
                         }
                     }
                 }
