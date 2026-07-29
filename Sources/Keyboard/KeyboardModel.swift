@@ -37,7 +37,20 @@ final class KeyboardModel: ObservableObject {
     private var ipcAvailable = false
     /// Set when THIS keyboard asked for a transcription; results produced by
     /// the app's own test button are acknowledged but never inserted here.
-    private var awaitingResultSince: Date?
+    /// PERSISTED (extension defaults): the keyboard gets hidden and reshown
+    /// mid-transcription all the time (focus changes, app hops), and a new
+    /// controller instance that forgot it was waiting silently swallowed
+    /// the result — the "stuck at Transcribing, text only in history" bug.
+    private var awaitingResultSince: Date? {
+        get { UserDefaults.standard.object(forKey: "kb.awaitingSince") as? Date }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue, forKey: "kb.awaitingSince")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "kb.awaitingSince")
+            }
+        }
+    }
 
     init(controller: KeyboardViewController) {
         self.controller = controller
@@ -66,11 +79,12 @@ final class KeyboardModel: ObservableObject {
         pollTimer = nil
         showingHistory = false
         // Don't leave the app recording into the void if the user dismissed
-        // the keyboard mid-dictation.
+        // the keyboard mid-dictation. A transcription already in flight is
+        // NOT cancelled and awaitingResultSince deliberately survives —
+        // the result inserts when the keyboard next appears (45 s bound).
         if state == .recording {
             send(.cancelSegment)
         }
-        awaitingResultSince = nil
     }
 
     // MARK: user actions
