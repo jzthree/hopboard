@@ -36,7 +36,10 @@ struct KeyboardRootView: View {
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 56)
+                    // Full-height 44 pt target; contentShape makes the whole
+                    // frame tappable, not just the glyph.
+                    .frame(width: 44, height: 64)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -118,10 +121,13 @@ struct KeyboardRootView: View {
             .padding(.horizontal, 4)
 
         case .ready:
-            HStack(spacing: 10) {
+            // The mic is the most-tapped control: keep everything else on
+            // the far side of a spacer so nothing sits in mistouch range.
+            HStack(spacing: 8) {
                 micButton(recording: false)
+                Spacer(minLength: 16)
                 if model.justInserted {
-                    Label("Inserted", systemImage: "checkmark")
+                    Label("inserted", systemImage: "checkmark")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.green)
                 } else {
@@ -134,20 +140,34 @@ struct KeyboardRootView: View {
                         }
                     }
                 }
-                Spacer(minLength: 0)
                 endButton
             }
             .padding(.horizontal, 4)
 
         case .recording:
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 micButton(recording: true)
-                KeyboardLevelMeter(level: model.micLevel)
-                    .frame(height: 20)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Circle().fill(.red).frame(width: 8, height: 8)
+                        Text("Recording")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                        if let start = model.recordingStartedAt {
+                            Text(timerInterval: start...Date.distantFuture, countsDown: false)
+                                .font(.caption.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    KeyboardLevelMeter(level: model.micLevel)
+                        .frame(height: 22)
+                }
                 Spacer(minLength: 0)
                 endButton
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.12)))
 
         case .transcribing:
             HStack(spacing: 12) {
@@ -191,6 +211,7 @@ struct KeyboardRootView: View {
             model.micTapped()
         } label: {
             ZStack {
+                if recording { RecordingPulse().frame(width: 52, height: 52) }
                 Circle()
                     .fill(recording ? Color.red : FlowBrand.accent)
                     .frame(width: 52, height: 52)
@@ -207,6 +228,8 @@ struct KeyboardRootView: View {
 
     // MARK: bottom key row
 
+    /// Globe fixed; space/delete/return share the width equally — return
+    /// and delete get used at least as often as space here.
     private var keyRow: some View {
         HStack(spacing: 8) {
             if model.showsGlobe {
@@ -216,9 +239,10 @@ struct KeyboardRootView: View {
             }
             key("space", flexible: true) { model.spaceTapped() }
             RepeatKey(systemName: "delete.left") { model.deleteTapped() }
-                .frame(width: 44, height: 38)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
                 .background(keyBackground)
-            key("return") { model.returnTapped() }
+            key("return", flexible: true) { model.returnTapped() }
         }
         .frame(height: 38)
     }
@@ -238,6 +262,28 @@ struct KeyboardRootView: View {
                 .background(keyBackground)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Expanding red rings behind the mic while recording — visible from the
+/// corner of an eye, unlike a level meter alone.
+struct RecordingPulse: View {
+    @State private var animate = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.red.opacity(animate ? 0 : 0.55), lineWidth: 3)
+                .scaleEffect(animate ? 1.9 : 1)
+            Circle()
+                .stroke(Color.red.opacity(animate ? 0 : 0.35), lineWidth: 2)
+                .scaleEffect(animate ? 1.5 : 1)
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false)) {
+                animate = true
+            }
+        }
     }
 }
 

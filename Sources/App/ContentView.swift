@@ -7,6 +7,7 @@ struct ContentView: View {
     @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
+    @State private var loadingStart: Date?
 
     /// Whisper's own language table (name → code), prettified and sorted.
     private static let languageChoices: [(name: String, code: String)] =
@@ -25,14 +26,25 @@ struct ContentView: View {
                             .font(.callout)
                     }
                 }
-                promptSection
-                setupSection
+                // History is what gets used daily — it lives right under the
+                // session card. Setup disappears once both checks are green.
                 historySection
+                promptSection
+                if !setupComplete {
+                    setupSection
+                }
             }
             .navigationTitle("FlowBoard")
             .tint(FlowBrand.accent)
             .animation(.snappy, value: session.state)
             .onAppear { if !onboarded { showOnboarding = true } }
+            .onChange(of: session.modelState) { _, new in
+                if case .loading = new {
+                    if loadingStart == nil { loadingStart = Date() }
+                } else {
+                    loadingStart = nil
+                }
+            }
             .sheet(isPresented: $showOnboarding, onDismiss: { onboarded = true }) {
                 OnboardingSheet()
             }
@@ -103,8 +115,17 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             case .loading:
                 ProgressView()
-                Text("Optimizing for the Neural Engine — the first load takes about a minute, later loads a few seconds.")
-                    .font(.callout)
+                HStack(spacing: 6) {
+                    Text("Optimizing for the Neural Engine")
+                        .font(.callout)
+                    if let start = loadingStart {
+                        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+                            .font(.callout.monospacedDigit())
+                    }
+                }
+                .foregroundStyle(.secondary)
+                Text("One time only — takes a minute or two. Later sessions start in seconds.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             default:
@@ -196,6 +217,10 @@ struct ContentView: View {
     }
 
     // MARK: setup checklist
+
+    private var setupComplete: Bool {
+        session.micPermission == .granted && session.keyboardSeen
+    }
 
     private var setupSection: some View {
         Section("Setup") {

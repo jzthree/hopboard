@@ -28,6 +28,16 @@ actor Transcriber {
         onState(new)
     }
 
+    /// Download callbacks keep firing at 100% during file verification and
+    /// can land AFTER the state moved on to .loading — without this guard
+    /// the UI shows a progress bar stuck at 100% for the whole Neural
+    /// Engine compile.
+    private func applyDownloadProgress(_ fraction: Double) {
+        if case .downloading = state {
+            set(.downloading(fraction))
+        }
+    }
+
     var isReady: Bool { pipe != nil }
 
     func load() async {
@@ -41,7 +51,7 @@ actor Transcriber {
                 variant: Self.modelName,
                 progressCallback: { [weak self] progress in
                     let fraction = progress.fractionCompleted
-                    Task { await self?.set(.downloading(fraction)) }
+                    Task { await self?.applyDownloadProgress(fraction) }
                 })
             set(.loading)
             let config = WhisperKitConfig(

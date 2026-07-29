@@ -22,6 +22,9 @@ final class KeyboardModel: ObservableObject {
     /// dismissed mid-transcribe) is recoverable with a preview.
     @Published private(set) var historyItems: [FlowResult] = []
     @Published var showingHistory = false
+    /// When the current recording started — drives the live timer that
+    /// makes the recording state unmissable.
+    @Published private(set) var recordingStartedAt: Date?
 
     private weak var controller: KeyboardViewController?
     /// The UIKit globe key needs the controller for handleInputModeList.
@@ -131,6 +134,11 @@ final class KeyboardModel: ObservableObject {
         tone = store.tone
         historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
         consumeResultIfAny()
+        if store.state == .recording {
+            if recordingStartedAt == nil { recordingStartedAt = Date() }
+        } else {
+            recordingStartedAt = nil
+        }
 
         guard store.sessionAlive else {
             state = .noSession

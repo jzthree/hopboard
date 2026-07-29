@@ -19,6 +19,37 @@ final class AudioRecorder {
     /// Called on the main thread when the session is interrupted (call,
     /// Siri, another app taking the mic) and cannot continue.
     var onInterruption: (() -> Void)?
+    /// Called on the audio thread each time a completed ~30 s window rolls
+    /// out of a long dictation, so transcription can start while the user
+    /// is still talking. The window is removed from the buffer — the
+    /// callee owns (and should discard) it after transcribing.
+    var onWindow: (([Float]) -> Void)?
+
+    /// Long dictations roll out in ~30 s windows (Whisper's native span),
+    /// cut at the quietest 200 ms in the last few seconds to avoid
+    /// splitting mid-word.
+    static let windowFrames = Int(targetSampleRate) * 30
+    static let windowSearchFrames = Int(targetSampleRate) * 5
+
+    /// The quietest cut point inside the search region at the end of a
+    /// full window. Pure function, unit-tested.
+    static func quietCutIndex(in samples: [Float]) -> Int {
+        let end = min(windowFrames, samples.count)
+        let hop = Int(targetSampleRate) / 5  // 200 ms
+        var best = end
+        var bestEnergy = Float.greatestFiniteMagnitude
+        var i = max(0, end - windowSearchFrames)
+        while i + hop <= end {
+            var energy: Float = 0
+            for j in i..<(i + hop) { energy += samples[j] * samples[j] }
+            if energy < bestEnergy {
+                bestEnergy = energy
+                best = i + hop / 2
+            }
+            i += hop
+        }
+        return best
+    }
 
     private var levelThrottle = 0
 
@@ -149,12 +180,19 @@ final class AudioRecorder {
         let chunk = Array(UnsafeBufferPointer(start: channel[0], count: frames))
 
         lock.lock()
-        // Hard cap: 4 minutes of 16 kHz mono (~15 MB). A runaway segment
-        // should degrade to "truncated", never to an OOM kill mid-session.
+        // Hard cap: 4 minutes of 16 kHz mono (~15 MB). Windows roll out
+        // below, so this cap only ever applies to a pathological tail.
         if samples.count < Int(Self.targetSampleRate) * 240 {
             samples.append(contentsOf: chunk)
         }
+        var window: [Float]?
+        if capturing, samples.count >= Self.windowFrames {
+            let cut = Self.quietCutIndex(in: samples)
+            window = Array(samples[0..<cut])
+            samples.removeFirst(cut)
+        }
         lock.unlock()
+        if let window { onWindow?(window) }
 
         levelThrottle += 1
         if levelThrottle % 3 == 0, frames > 0 {

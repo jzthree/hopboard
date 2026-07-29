@@ -50,6 +50,27 @@ final class FlowIPCTests: XCTestCase {
         XCTAssertFalse(store.sessionAlive)
     }
 
+    func testQuietCutIndexFindsSilence() {
+        // 30 s of loud signal with a quiet patch at 27 s: the cut should
+        // land inside the patch, not at the hard 30 s boundary.
+        let rate = Int(AudioRecorder.targetSampleRate)
+        var samples = [Float](repeating: 0.5, count: rate * 31)
+        for i in (rate * 27)..<(rate * 27 + rate / 2) { samples[i] = 0.0001 }
+        let cut = AudioRecorder.quietCutIndex(in: samples)
+        XCTAssertGreaterThan(cut, rate * 26)
+        XCTAssertLessThan(cut, rate * 28)
+    }
+
+    func testQuietCutIndexUniformFallsBackToWindowEnd() {
+        let rate = Int(AudioRecorder.targetSampleRate)
+        let samples = [Float](repeating: 0.5, count: rate * 30)
+        let cut = AudioRecorder.quietCutIndex(in: samples)
+        // Uniform energy: any cut in the search region is fine, but it must
+        // stay inside the completed window.
+        XCTAssertLessThanOrEqual(cut, rate * 30)
+        XCTAssertGreaterThan(cut, rate * 24)
+    }
+
     func testSmartJoin() {
         XCTAssertEqual(FlowText.smartJoin(before: nil, insertion: "Hello"), "Hello")
         XCTAssertEqual(FlowText.smartJoin(before: "", insertion: "Hello"), "Hello")

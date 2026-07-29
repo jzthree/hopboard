@@ -23,6 +23,11 @@ final class SessionManager: ObservableObject {
     private var heartbeatTimer: Timer?
     private var idleTimer: Timer?
     private var levelWriteGate = Date.distantPast
+    /// Serial chain of window transcriptions for the segment in progress.
+    /// Long dictations transcribe while the user is still talking; at stop
+    /// only the tail remains. Each window's samples are owned by its task
+    /// and freed as soon as it finishes.
+    private var windowChain: Task<String, Never>?
 
     /// Sessions end themselves after this long with no dictation, so an
     /// abandoned session doesn't hold the mic (and the orange dot) all day.
@@ -74,6 +79,9 @@ final class SessionManager: ObservableObject {
         recorder.onInterruption = { [weak self] in
             self?.endSession(reason: "Audio was interrupted — session ended.")
         }
+        recorder.onWindow = { [weak self] window in
+            Task { @MainActor in self?.enqueueWindow(window) }
+        }
         do {
             try recorder.start()
         } catch {
@@ -94,33 +102,59 @@ final class SessionManager: ObservableObject {
         heartbeatTimer = nil
         idleTimer?.invalidate()
         idleTimer = nil
+        windowChain = nil
         if let reason { lastError = reason }
         publish(.idle)
+        // Don't hold ~1.5 GB of Whisper weights in a backgrounded app with
+        // no session; the next session reloads from the CoreML cache in a
+        // few seconds.
+        let transcriber = self.transcriber
+        Task { await transcriber?.unload() }
     }
 
     // MARK: segments (driven by the keyboard or the in-app test button)
 
     func beginSegment() {
         guard state == .ready else { return }
+        windowChain = nil
         recorder.beginSegment()
         publish(.recording)
         touchIdleTimer()
     }
 
+    /// A completed 30 s window rolled out mid-dictation: transcribe it now,
+    /// chained behind earlier windows so the texts stitch in order.
+    private func enqueueWindow(_ window: [Float]) {
+        guard state == .recording else { return }
+        touchIdleTimer()   // a long monologue is activity, not idleness
+        let language = UserDefaults.standard.string(forKey: Self.languageKey)
+        let transcriber = self.transcriber
+        let previous = windowChain
+        windowChain = Task {
+            let prefix = await previous?.value ?? ""
+            let text = (try? await transcriber?.transcribe(window, language: language)) ?? ""
+            return [prefix, text].filter { !$0.isEmpty }.joined(separator: " ")
+        }
+    }
+
     func finishSegment() {
         guard state == .recording else { return }
-        let samples = recorder.takeSegment()
+        let tail = recorder.takeSegment()
         publish(.transcribing)
         let language = UserDefaults.standard.string(forKey: Self.languageKey)
         let tone = store.tone
+        let previous = windowChain
+        windowChain = nil
         Task {
-            var text = ""
+            let prefix = await previous?.value ?? ""
+            var tailText = ""
             do {
-                text = try await transcriber?.transcribe(samples, language: language) ?? ""
-                text = tone.apply(to: text)
+                tailText = try await transcriber?.transcribe(tail, language: language) ?? ""
             } catch {
                 lastError = "Transcription failed: \(error.localizedDescription)"
             }
+            let text = tone.apply(to: [prefix, tailText]
+                .filter { !$0.isEmpty }.joined(separator: " "))
             // Always deliver a result — an empty one releases the keyboard
             // from its spinner instead of leaving it waiting forever.
             let result = FlowResult(id: UUID(), text: text, finishedAt: Date().timeIntervalSince1970)
@@ -135,6 +169,7 @@ final class SessionManager: ObservableObject {
     func cancelSegment() {
         guard state == .recording else { return }
         recorder.cancelSegment()
+        windowChain = nil
         publish(.ready)
     }
 
