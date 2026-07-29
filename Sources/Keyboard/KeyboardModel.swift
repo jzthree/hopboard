@@ -32,6 +32,10 @@ final class KeyboardModel: ObservableObject {
     private let store = FlowStore()
     private let bus = DarwinBus()
     private var pollTimer: Timer?
+    /// A tap's expected state, displayed for at most 2 s while the command
+    /// travels to the app. After that (or once the store confirms), the
+    /// display always follows the store — the engine's true state.
+    private var optimistic: (state: UIState, at: Date)?
     /// Whether shared-keychain IPC works from this process. Probed, not
     /// inferred from hasFullAccess — the probe is the ground truth.
     private var ipcAvailable = false
@@ -93,10 +97,12 @@ final class KeyboardModel: ObservableObject {
         switch state {
         case .ready:
             send(.startSegment)
-            state = .recording  // optimistic; refresh() confirms
+            optimistic = (.recording, Date())
+            state = .recording
         case .recording:
             send(.stopSegment)
-            awaitingResultSince = Date()
+            awaitingResultSince = Date()   // insert bookkeeping, not display
+            optimistic = (.transcribing, Date())
             state = .transcribing
         default:
             break
@@ -106,13 +112,6 @@ final class KeyboardModel: ObservableObject {
     func endSessionTapped() {
         send(.endSession)
         state = .noSession
-    }
-
-    /// Manual escape from the transcribing spinner (tap to dismiss).
-    func cancelWaiting() {
-        awaitingResultSince = nil
-        send(.cancelSegment)
-        refresh()
     }
 
     /// Tone chip: cycle Formal → Casual → no caps → Excited!.
@@ -176,19 +175,30 @@ final class KeyboardModel: ObservableObject {
             return
         }
         micLevel = store.micLevel
+
+        // The store IS the engine's true state; render it.
+        let truth: UIState
         switch store.state {
-        case .idle:
-            state = .noSession
-        case .loading:
-            state = .loading(store.modelStatus)
-        case .ready:
-            // Hold the spinner while a result we asked for is still coming.
-            state = awaitingResultSince == nil ? .ready : .transcribing
-        case .recording:
-            state = .recording
-        case .transcribing:
-            state = .transcribing
+        case .idle: truth = .noSession
+        case .loading: truth = .loading(store.modelStatus)
+        case .ready: truth = .ready
+        case .recording: truth = .recording
+        case .transcribing: truth = .transcribing
         }
+
+        // A just-tapped command may still be in flight — bridge with the
+        // expected state for at most 2 s, then defer to the truth.
+        if let optimistic {
+            let bridgeValid = Date().timeIntervalSince(optimistic.at) < 2
+                && ((optimistic.state == .recording && truth == .ready)
+                    || (optimistic.state == .transcribing && truth == .recording))
+            if bridgeValid {
+                state = optimistic.state
+                return
+            }
+            self.optimistic = nil
+        }
+        state = truth
     }
 
     private func consumeResultIfAny() {
