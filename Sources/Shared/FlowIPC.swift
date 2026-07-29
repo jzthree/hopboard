@@ -275,6 +275,23 @@ final class DarwinBus {
 }
 
 enum FlowText {
+    /// Whisper emits half-width punctuation ("," "!") inside Chinese text;
+    /// convert to full-width when it follows a CJK character.
+    static func normalizeCJKPunctuation(_ text: String) -> String {
+        let map: [Character: Character] = [",": "，", ";": "；", "?": "？",
+                                           "!": "！", ":": "：", ".": "。"]
+        var chars = Array(text)
+        for i in chars.indices where map.keys.contains(chars[i]) {
+            guard i > 0, let scalar = chars[i - 1].unicodeScalars.first,
+                  (0x2E80...0x9FFF).contains(Int(scalar.value)) ||
+                  (0x3040...0x30FF).contains(Int(scalar.value)) else { continue }
+            // "3.5" style decimals are safe: the guard requires a CJK
+            // character immediately before the mark.
+            chars[i] = map[chars[i]]!
+        }
+        return String(chars)
+    }
+
     /// Joins dictated text onto what precedes the cursor: a leading space
     /// unless we're at a start, after whitespace, or after an opening
     /// bracket/quote.

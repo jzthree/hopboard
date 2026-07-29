@@ -118,7 +118,7 @@ struct ContentView: View {
             case .loading:
                 ProgressView()
                 HStack(spacing: 6) {
-                    Text("Optimizing for the Neural Engine")
+                    Text("Loading model")
                         .font(.callout)
                     if let start = loadingStart {
                         Text(timerInterval: start...Date.distantFuture, countsDown: false)
@@ -126,7 +126,7 @@ struct ContentView: View {
                     }
                 }
                 .foregroundStyle(.secondary)
-                Text("One time only — takes a minute or two. Later sessions start in seconds.")
+                Text("The first load after an install or update optimizes for the Neural Engine and can take a couple of minutes. After that it's seconds, and the model stays loaded between sessions.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -150,12 +150,14 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
 
             if session.state == .ready {
-                // Calm, ambient hint — the bottom-edge swipe is a universal
-                // iOS gesture; users just need to be reminded it applies.
+                // Unhurried but unmissable: a static tinted pill, no motion.
                 Label("Swipe along the bottom edge to hop back to your app",
                       systemImage: "arrow.backward.to.line")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassPill(tint: FlowBrand.accent)
             }
 
             HStack(spacing: 12) {

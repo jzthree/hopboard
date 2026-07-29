@@ -127,9 +127,12 @@ struct KeyboardRootView: View {
                 micButton(recording: false)
                 Spacer(minLength: 16)
                 if model.justInserted {
-                    Label("inserted", systemImage: "checkmark")
-                        .font(.caption.weight(.medium))
+                    Label("Inserted", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .glassPill(tint: .green)
                 } else {
                     chip(model.tone.shortLabel, icon: "wand.and.stars") {
                         model.cycleTone()
@@ -183,14 +186,14 @@ struct KeyboardRootView: View {
         }
     }
 
-    /// Small pill control for the ready row (tone cycle, insert-last).
+    /// Small pill control for the ready row (tone cycle, History).
     private func chip(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(label, systemImage: icon)
                 .font(.caption)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Capsule().fill(Color(.secondarySystemFill)))
+                .glassPill()
         }
         .buttonStyle(.plain)
     }

@@ -12,9 +12,12 @@ import WhisperKit
 actor Transcriber {
     static let turboModel = "large-v3-v20240930_626MB"
     static let accurateModel = "large-v3_947MB"
-    /// The community-standard fix for Whisper's Chinese no-punctuation
-    /// mode; this exact text passed the empty-flake screen on 947 MB.
-    static let zhPunctuationPrompt = "这是一段会议记录，包含逗号、句号等标点符号。"
+    /// The fix for Whisper's Chinese no-punctuation mode. CRITICAL: the
+    /// prompt must read like transcript text. Instruction-style prompts
+    /// ("请使用标点符号") derail real Chinese audio into subtitle-outro
+    /// hallucinations ("请不吝点赞 订阅…") — measured on Aishell speech;
+    /// this neutral sentence was one of 4/6 that reliably punctuated it.
+    static let zhPunctuationPrompt = "以下是普通话的句子。"
 
     enum State: Equatable {
         case unloaded

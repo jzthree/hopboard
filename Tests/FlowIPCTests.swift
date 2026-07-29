@@ -71,6 +71,17 @@ final class FlowIPCTests: XCTestCase {
         XCTAssertGreaterThan(cut, rate * 24)
     }
 
+    func testNormalizeCJKPunctuation() {
+        XCTAssertEqual(FlowText.normalizeCJKPunctuation("对我做了介绍.我想说,大家好!"),
+                       "对我做了介绍。我想说，大家好！")
+        // Latin context untouched, decimals untouched.
+        XCTAssertEqual(FlowText.normalizeCJKPunctuation("Hello, world. 3.5 percent"),
+                       "Hello, world. 3.5 percent")
+        // Mixed: convert only after CJK characters.
+        XCTAssertEqual(FlowText.normalizeCJKPunctuation("他说,see you. 好的!"),
+                       "他说，see you. 好的！")
+    }
+
     func testSmartJoin() {
         XCTAssertEqual(FlowText.smartJoin(before: nil, insertion: "Hello"), "Hello")
         XCTAssertEqual(FlowText.smartJoin(before: "", insertion: "Hello"), "Hello")

@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import UIKit
 
 /// The app-side brain: owns the recorder and the model, mirrors every state
 /// change into the App Group store, and executes commands the keyboard sends.
@@ -46,6 +47,17 @@ final class SessionManager: ObservableObject {
         publish(.idle)
         bus.observe(Flow.commandNotification) { [weak self] in
             self?.drainCommands()
+        }
+        // Holding ~1.5 GB of idle weights is fine on a 12 GB phone until
+        // iOS says otherwise — then drop them (only while no session runs).
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.state == .idle else { return }
+                let transcriber = self.transcriber
+                Task { await transcriber?.unload() }
+            }
         }
     }
 
@@ -109,11 +121,9 @@ final class SessionManager: ObservableObject {
         windowChain = nil
         if let reason { lastError = reason }
         publish(.idle)
-        // Don't hold ~1.5 GB of Whisper weights in a backgrounded app with
-        // no session; the next session reloads from the CoreML cache in a
-        // few seconds.
-        let transcriber = self.transcriber
-        Task { await transcriber?.unload() }
+        // The model stays loaded between sessions — reloading on every
+        // session showed the user a "loading/optimizing" wait each time.
+        // Memory pressure (observed in init) is what triggers an unload.
     }
 
     // MARK: segments (driven by the keyboard or the in-app test button)
@@ -157,8 +167,8 @@ final class SessionManager: ObservableObject {
             } catch {
                 lastError = "Transcription failed: \(error.localizedDescription)"
             }
-            let text = tone.apply(to: [prefix, tailText]
-                .filter { !$0.isEmpty }.joined(separator: " "))
+            let text = tone.apply(to: FlowText.normalizeCJKPunctuation(
+                [prefix, tailText].filter { !$0.isEmpty }.joined(separator: " ")))
             // Always deliver a result — an empty one releases the keyboard
             // from its spinner instead of leaving it waiting forever.
             let result = FlowResult(id: UUID(), text: text, finishedAt: Date().timeIntervalSince1970)
@@ -214,7 +224,7 @@ final class SessionManager: ObservableObject {
         case .downloading(let fraction):
             store.modelStatus = "Downloading model \(Int(fraction * 100))%…"
         case .loading:
-            store.modelStatus = "Optimizing for Neural Engine (first time takes a minute)…"
+            store.modelStatus = "Loading model…"
         case .ready:
             store.modelStatus = ""
         case .failed(let message):

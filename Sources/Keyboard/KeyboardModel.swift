@@ -177,7 +177,7 @@ final class KeyboardModel: ObservableObject {
 
     private func flashInserted() {
         justInserted = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
             self?.justInserted = false
         }
     }
