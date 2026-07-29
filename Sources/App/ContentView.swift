@@ -4,9 +4,9 @@ import WhisperKit
 struct ContentView: View {
     @EnvironmentObject private var session: SessionManager
     @State private var copiedResultID: UUID?
-    @AppStorage(SessionManager.promptKey) private var promptText = ""
     @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
-    @AppStorage(FlowTone.defaultsKey) private var toneRaw = FlowTone.formal.rawValue
+    @AppStorage("flow.onboarded") private var onboarded = false
+    @State private var showOnboarding = false
 
     /// Whisper's own language table (name → code), prettified and sorted.
     private static let languageChoices: [(name: String, code: String)] =
@@ -32,6 +32,17 @@ struct ContentView: View {
             .navigationTitle("FlowBoard")
             .tint(FlowBrand.accent)
             .animation(.snappy, value: session.state)
+            .onAppear { if !onboarded { showOnboarding = true } }
+            .sheet(isPresented: $showOnboarding, onDismiss: { onboarded = true }) {
+                OnboardingSheet()
+            }
+            .toolbar {
+                Button {
+                    showOnboarding = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
     }
 
@@ -152,7 +163,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: custom prompt
+    // MARK: dictation settings
 
     private var promptSection: some View {
         Section {
@@ -162,7 +173,7 @@ struct ContentView: View {
                     Text(choice.name).tag(choice.code)
                 }
             }
-            Picker("Tone", selection: $toneRaw) {
+            Picker("Tone", selection: $session.tone) {
                 ForEach(FlowTone.allCases) { tone in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tone.label)
@@ -173,18 +184,14 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
-                    .tag(tone.rawValue)
+                    .tag(tone)
                 }
             }
             .pickerStyle(.navigationLink)
-            TextField("Names, jargon, punctuation style…",
-                      text: $promptText, axis: .vertical)
-                .lineLimit(2...4)
-                .autocorrectionDisabled()
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. The vocabulary field is fed to Whisper as its initial prompt — write names and jargon the way you want them spelled, in the punctuation style you want back. Both apply from your next dictation.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. Both apply from your next dictation.")
         }
     }
 
@@ -280,6 +287,56 @@ struct ContentView: View {
         } footer: {
             Text("Tap a dictation to copy it. Everything is transcribed on-device; audio never leaves your iPhone.")
         }
+    }
+}
+
+/// First-run education: why FlowBoard works the way it does. iOS's keyboard
+/// mic ban is the single fact that explains every quirk of the app.
+struct OnboardingSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    row("keyboard.badge.ellipsis",
+                        "Keyboards can't hear you",
+                        "iOS never lets any keyboard extension use the microphone — an Apple privacy rule, with no exception. Every dictation keyboard, including Wispr Flow, has to work around it.")
+                    row("waveform",
+                        "So the app listens instead",
+                        "Start a Flow Session here, and the FlowBoard app keeps recording in the background. The keyboard is a remote control: it tells the app when to listen and types out what came back.")
+                    row("arrow.uturn.backward",
+                        "Start, then swipe back",
+                        "After starting a session, swipe back (or use the app switcher) to wherever you were typing. The FlowBoard keyboard picks the session up from there.")
+                    row("circle.fill",
+                        "The orange dot is honest",
+                        "iOS shows the mic indicator the whole session, because the mic really is on. End the session from the keyboard (✕) or the app when you're done; it also ends itself after 15 idle minutes.",
+                        tint: .orange)
+                } footer: {
+                    Text("Everything is transcribed on-device by Whisper large-v3-turbo. Audio never leaves your iPhone.")
+                }
+            }
+            .navigationTitle("How FlowBoard works")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button("Got it") { dismiss() }
+                    .bold()
+            }
+        }
+    }
+
+    private func row(_ icon: String, _ title: String, _ body: String, tint: Color = FlowBrand.accent) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(tint)
+                .frame(width: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(body).font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

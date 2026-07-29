@@ -2,6 +2,7 @@ import SwiftUI
 
 struct KeyboardRootView: View {
     @ObservedObject var model: KeyboardModel
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 6) {
@@ -34,11 +35,13 @@ struct KeyboardRootView: View {
 
         case .noSession:
             HStack(spacing: 12) {
-                // A real SwiftUI Link, not a button with an openURL hack:
-                // iOS 18 killed every selector-based route to UIApplication
-                // from keyboard extensions, but a genuine link tap is still
-                // allowed to open the containing app.
-                Link(destination: Flow.startSessionURL) {
+                // SwiftUI's environment openURL action — the same sanctioned
+                // route Link uses (iOS 18 killed every selector-based path
+                // to UIApplication from keyboards), but as a plain button
+                // with no link previews or "Open Link" affordances.
+                Button {
+                    openURL(Flow.startSessionURL)
+                } label: {
                     Label("Start Flow Session", systemImage: "waveform")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 16)
@@ -46,7 +49,8 @@ struct KeyboardRootView: View {
                         .background(Capsule().fill(.tint))
                         .foregroundStyle(.white)
                 }
-                Text("Opens FlowBoard, then swipe back.")
+                .buttonStyle(.plain)
+                Text("Opens FlowBoard, then swipe back here.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -64,11 +68,22 @@ struct KeyboardRootView: View {
             .padding(.horizontal, 4)
 
         case .ready:
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 micButton(recording: false)
-                Text(model.justInserted ? "Inserted ✓" : "Tap to dictate")
-                    .font(.caption)
-                    .foregroundStyle(model.justInserted ? .primary : .secondary)
+                if model.justInserted {
+                    Label("Inserted", systemImage: "checkmark")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.green)
+                } else {
+                    chip(model.tone.shortLabel, icon: "textformat") {
+                        model.cycleTone()
+                    }
+                    if model.lastText != nil {
+                        chip("last", icon: "arrow.uturn.down") {
+                            model.insertLastTapped()
+                        }
+                    }
+                }
                 Spacer(minLength: 0)
                 endButton
             }
@@ -96,6 +111,18 @@ struct KeyboardRootView: View {
             }
             .padding(.horizontal, 4)
         }
+    }
+
+    /// Small pill control for the ready row (tone cycle, insert-last).
+    private func chip(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: icon)
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(Color(.secondarySystemFill)))
+        }
+        .buttonStyle(.plain)
     }
 
     private var endButton: some View {

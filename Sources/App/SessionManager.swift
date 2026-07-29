@@ -11,6 +11,10 @@ final class SessionManager: ObservableObject {
     @Published private(set) var micLevel: Float = 0
     @Published var lastError: String?
     @Published private(set) var micPermission = AVAudioApplication.shared.recordPermission
+    /// Mirrors FlowStore.tone; the keyboard's tone chip changes it too.
+    @Published var tone: FlowTone = .formal {
+        didSet { if store.tone != tone { store.tone = tone } }
+    }
 
     let store = FlowStore()
     private let bus = DarwinBus()
@@ -24,13 +28,13 @@ final class SessionManager: ObservableObject {
     /// abandoned session doesn't hold the mic (and the orange dot) all day.
     static let idleTimeout: TimeInterval = 15 * 60
 
-    /// UserDefaults keys for dictation settings (edited in ContentView
-    /// via @AppStorage).
-    static let promptKey = "flow.promptText"
-    static let languageKey = "flow.language"   // whisper code, or "auto"
+    /// UserDefaults key for the dictation language (whisper code or "auto").
+    /// Tone lives in FlowStore instead — the keyboard can change it too.
+    static let languageKey = "flow.language"
 
     init() {
         transcripts = store.results
+        tone = store.tone
         // A fresh launch means any previous session died with the process.
         publish(.idle)
         bus.observe(Flow.commandNotification) { [weak self] in
@@ -108,15 +112,11 @@ final class SessionManager: ObservableObject {
         let samples = recorder.takeSegment()
         publish(.transcribing)
         let language = UserDefaults.standard.string(forKey: Self.languageKey)
-        let tone = UserDefaults.standard.string(forKey: FlowTone.defaultsKey)
-            .flatMap(FlowTone.init(rawValue:)) ?? .formal
-        // Tone exemplar first, then the user's vocabulary — one prompt.
-        let userPrompt = UserDefaults.standard.string(forKey: Self.promptKey) ?? ""
-        let prompt = (tone.exemplar + " " + userPrompt).trimmingCharacters(in: .whitespaces)
+        let tone = store.tone
         Task {
             var text = ""
             do {
-                text = try await transcriber?.transcribe(samples, prompt: prompt, language: language) ?? ""
+                text = try await transcriber?.transcribe(samples, language: language) ?? ""
                 text = tone.apply(to: text)
             } catch {
                 lastError = "Transcription failed: \(error.localizedDescription)"
@@ -146,6 +146,9 @@ final class SessionManager: ObservableObject {
     // MARK: keyboard commands
 
     private func drainCommands() {
+        // The keyboard's tone chip writes straight to the store and pings
+        // this notification; keep the app UI in sync even with no command.
+        if tone != store.tone { tone = store.tone }
         guard let command = store.takeCommand() else { return }
         switch command.action {
         case .startSegment: beginSegment()

@@ -16,6 +16,10 @@ final class KeyboardModel: ObservableObject {
     @Published private(set) var micLevel: Float = 0
     @Published private(set) var showsGlobe = true
     @Published private(set) var justInserted = false
+    @Published private(set) var tone: FlowTone = .formal
+    /// Most recent non-empty dictation, for re-inserting when the previous
+    /// one landed nowhere (focus lost, keyboard dismissed mid-transcribe).
+    @Published private(set) var lastText: String?
 
     private weak var controller: KeyboardViewController?
     /// The UIKit globe key needs the controller for handleInputModeList.
@@ -84,6 +88,21 @@ final class KeyboardModel: ObservableObject {
         state = .noSession
     }
 
+    /// Tone chip: cycle Formal → Casual → no caps → Excited!.
+    func cycleTone() {
+        tone = tone.next
+        store.tone = tone
+        bus.post(Flow.commandNotification)   // nudges the app UI to re-read
+    }
+
+    /// Re-insert the last dictation at the cursor.
+    func insertLastTapped() {
+        guard let lastText, let controller else { return }
+        controller.insert(FlowText.smartJoin(before: controller.textBeforeCursor,
+                                             insertion: lastText))
+        flashInserted()
+    }
+
     func deleteTapped() { controller?.deleteBackwardOnce() }
     func spaceTapped() { controller?.insertSpace() }
     func returnTapped() { controller?.insertNewline() }
@@ -105,6 +124,8 @@ final class KeyboardModel: ObservableObject {
             state = .needsFullAccess
             return
         }
+        tone = store.tone
+        lastText = store.results.last(where: { !$0.text.isEmpty })?.text
         consumeResultIfAny()
 
         guard store.sessionAlive else {
@@ -139,6 +160,10 @@ final class KeyboardModel: ObservableObject {
         let text = FlowText.smartJoin(before: controller?.textBeforeCursor,
                                       insertion: result.text)
         controller?.insert(text)
+        flashInserted()
+    }
+
+    private func flashInserted() {
         justInserted = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             self?.justInserted = false

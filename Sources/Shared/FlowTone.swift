@@ -1,16 +1,30 @@
 import Foundation
 
-/// Wispr-Flow-style tone modes. Each mode works on two levels: an exemplar
-/// sentence prepended to Whisper's initial prompt (soft bias — Whisper
-/// mimics the transcript style it thinks it's continuing) and a
-/// deterministic post-pass that guarantees the capitalization and the
-/// ending, which the prompt alone cannot.
+/// Wispr-Flow-style tone modes, applied as a deterministic post-pass over
+/// the transcript. Prompt-based style biasing would be the second half of
+/// this feature (style through the middle of the text, not just the edges),
+/// but WhisperKit 1.x promptTokens are broken — empty output with prefill,
+/// ignored without — so post-processing is the whole mechanism for now.
 enum FlowTone: String, CaseIterable, Identifiable {
     case formal, casual, veryCasual, excited
 
-    static let defaultsKey = "flow.tone"
-
     var id: String { rawValue }
+
+    /// Fits a keyboard chip.
+    var shortLabel: String {
+        switch self {
+        case .formal: "Formal"
+        case .casual: "Casual"
+        case .veryCasual: "no caps"
+        case .excited: "Excited!"
+        }
+    }
+
+    /// Cycle order for the keyboard's tone chip.
+    var next: FlowTone {
+        let all = Self.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
+    }
 
     var label: String {
         switch self {
@@ -34,20 +48,6 @@ enum FlowTone: String, CaseIterable, Identifiable {
     /// transform, so the preview can never drift from the behavior.
     var example: String {
         apply(to: "We should meet at noon tomorrow.")
-    }
-
-    /// Prepended to the initial prompt so Whisper leans toward the style.
-    var exemplar: String {
-        switch self {
-        case .formal:
-            "Here is the transcript. It is written carefully, with proper capitalization and punctuation."
-        case .casual:
-            "Here's the transcript, keeping things relaxed and natural"
-        case .veryCasual:
-            "heres the transcript just super relaxed like a text no caps or dots"
-        case .excited:
-            "Here's the transcript! It's so exciting! I love where this is going!"
-        }
     }
 
     /// Deterministic style guarantees, applied after transcription.

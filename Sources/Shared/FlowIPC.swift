@@ -112,6 +112,7 @@ final class FlowStore {
         static let keyboardSeen = "flow.keyboardSeen"
         static let modelStatus = "flow.modelStatus"
         static let probe = "flow.probe"
+        static let tone = "flow.tone"
     }
 
     init(backend: FlowBackend = KeychainBackend()) {
@@ -223,6 +224,13 @@ final class FlowStore {
         guard let last = results.last else { return nil }
         if last.id == lastConsumedResultID { return nil }
         return last
+    }
+
+    // MARK: settings both sides can change (tone chip on the keyboard)
+
+    var tone: FlowTone {
+        get { string(Key.tone).flatMap(FlowTone.init(rawValue:)) ?? .formal }
+        set { setString(newValue.rawValue, Key.tone) }
     }
 
     // MARK: onboarding breadcrumbs (keyboard writes, app reads)
