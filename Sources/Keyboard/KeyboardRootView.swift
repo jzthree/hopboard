@@ -103,7 +103,7 @@ struct KeyboardRootView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 } else {
-                    chip("history", icon: "clock.arrow.circlepath") {
+                    chip("History", icon: "clock.arrow.circlepath") {
                         model.showingHistory = true
                     }
                 }
@@ -135,7 +135,7 @@ struct KeyboardRootView: View {
                         model.cycleTone()
                     }
                     if !model.historyItems.isEmpty {
-                        chip("history", icon: "clock.arrow.circlepath") {
+                        chip("History", icon: "clock.arrow.circlepath") {
                             model.showingHistory = true
                         }
                     }

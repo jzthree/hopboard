@@ -27,13 +27,14 @@ struct ContentView: View {
                             .font(.callout)
                     }
                 }
-                // History is what gets used daily — it lives right under the
-                // session card. Setup disappears once both checks are green.
-                historySection
+                // History grows long, so it goes LAST — anything below it
+                // would be unreachable. Settings stay compact above it, and
+                // Setup disappears once both checks are green.
                 promptSection
                 if !setupComplete {
                     setupSection
                 }
+                historySection
             }
             .navigationTitle("FlowBoard")
             .tint(FlowBrand.accent)
@@ -147,6 +148,15 @@ struct ContentView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            if session.state == .ready {
+                // Calm, ambient hint — the bottom-edge swipe is a universal
+                // iOS gesture; users just need to be reminded it applies.
+                Label("Swipe along the bottom edge to hop back to your app",
+                      systemImage: "arrow.backward.to.line")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
 
             HStack(spacing: 12) {
                 // In-app dictation test — same path the keyboard drives.

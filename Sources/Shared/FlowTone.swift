@@ -10,15 +10,14 @@ enum FlowTone: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Fits a keyboard chip. Lowercase on purpose — every key label on the
-    /// keyboard ("space", "return", "history") follows the system keyboard's
-    /// lowercase convention.
+    /// Fits a keyboard chip. Each label demonstrates its own style —
+    /// capitalization and ending included.
     var shortLabel: String {
         switch self {
-        case .formal: "formal"
-        case .casual: "casual"
+        case .formal: "Formal."
+        case .casual: "Casual"
         case .veryCasual: "no caps"
-        case .excited: "excited!"
+        case .excited: "Excited!"
         }
     }
 
