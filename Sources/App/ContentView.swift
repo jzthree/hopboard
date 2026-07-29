@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var session: SessionManager
     @State private var copiedResultID: UUID?
     @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
+    @AppStorage(SessionManager.modelKey) private var modelChoice = "turbo"
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
@@ -209,10 +210,31 @@ struct ContentView: View {
                 }
             }
             .pickerStyle(.navigationLink)
+            Picker("Model", selection: $modelChoice) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Fast")
+                    Text("large-v3-turbo · recommended")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .tag("turbo")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Accurate")
+                    Text("large-v3 · adds Chinese punctuation · extra 950 MB download, slower")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .tag("accurate")
+            }
+            .pickerStyle(.navigationLink)
+            .onChange(of: modelChoice) { _, _ in
+                // The new model loads on the next session start.
+                session.endSession()
+            }
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. Both apply from your next dictation.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese. Changes apply from your next session.")
         }
     }
 

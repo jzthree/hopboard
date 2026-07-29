@@ -33,9 +33,11 @@ final class SessionManager: ObservableObject {
     /// abandoned session doesn't hold the mic (and the orange dot) all day.
     static let idleTimeout: TimeInterval = 15 * 60
 
-    /// UserDefaults key for the dictation language (whisper code or "auto").
-    /// Tone lives in FlowStore instead — the keyboard can change it too.
+    /// UserDefaults keys: dictation language (whisper code or "auto") and
+    /// model choice ("turbo" | "accurate"). Tone lives in FlowStore
+    /// instead — the keyboard can change it too.
     static let languageKey = "flow.language"
+    static let modelKey = "flow.model"
 
     init() {
         transcripts = store.results
@@ -67,7 +69,9 @@ final class SessionManager: ObservableObject {
             Task { @MainActor in self?.applyModelState(modelState) }
         }
         self.transcriber = transcriber
-        await transcriber.load()
+        let model = UserDefaults.standard.string(forKey: Self.modelKey) == "accurate"
+            ? Transcriber.accurateModel : Transcriber.turboModel
+        await transcriber.load(model: model)
         guard await transcriber.isReady else {
             publish(.idle)
             return
@@ -208,7 +212,7 @@ final class SessionManager: ObservableObject {
         case .unloaded:
             store.modelStatus = ""
         case .downloading(let fraction):
-            store.modelStatus = "Downloading model \(Int(fraction * 100))% of 626 MB…"
+            store.modelStatus = "Downloading model \(Int(fraction * 100))%…"
         case .loading:
             store.modelStatus = "Optimizing for Neural Engine (first time takes a minute)…"
         case .ready:

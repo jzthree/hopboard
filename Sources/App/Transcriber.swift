@@ -1,11 +1,20 @@
 import Foundation
 import WhisperKit
 
-/// Thin wrapper around WhisperKit pinned to large-v3-turbo. The 626 MB
-/// mixed-bit palettized variant is Argmax's recommended iPhone build of
-/// large-v3-v20240930 (turbo) — near-lossless quality, ANE-friendly.
+/// Thin wrapper around WhisperKit. Two models:
+/// - turbo (626 MB): Argmax's recommended iPhone build of large-v3-turbo.
+///   Fast, but its distilled 4-layer decoder cannot take prompts at all
+///   (deterministically empty output — measured).
+/// - accurate (947 MB compressed large-v3): slower, but prompts mostly
+///   work, which is the only known lever for Chinese punctuation. "Mostly":
+///   some prompt texts still collapse to empty (measured 2/4), so every
+///   prompted decode carries an automatic promptless retry.
 actor Transcriber {
-    static let modelName = "large-v3-v20240930_626MB"
+    static let turboModel = "large-v3-v20240930_626MB"
+    static let accurateModel = "large-v3_947MB"
+    /// The community-standard fix for Whisper's Chinese no-punctuation
+    /// mode; this exact text passed the empty-flake screen on 947 MB.
+    static let zhPunctuationPrompt = "这是一段会议记录，包含逗号、句号等标点符号。"
 
     enum State: Equatable {
         case unloaded
@@ -17,6 +26,7 @@ actor Transcriber {
 
     private var pipe: WhisperKit?
     private(set) var state: State = .unloaded
+    private(set) var loadedModel: String?
     private let onState: @Sendable (State) -> Void
 
     init(onState: @escaping @Sendable (State) -> Void) {
@@ -40,22 +50,24 @@ actor Transcriber {
 
     var isReady: Bool { pipe != nil }
 
-    func load() async {
-        guard pipe == nil else {
+    func load(model: String) async {
+        if pipe != nil, loadedModel == model {
             set(.ready)
             return
         }
+        pipe = nil
+        loadedModel = model
         do {
             set(.downloading(0))
             let folder = try await WhisperKit.download(
-                variant: Self.modelName,
+                variant: model,
                 progressCallback: { [weak self] progress in
                     let fraction = progress.fractionCompleted
                     Task { await self?.applyDownloadProgress(fraction) }
                 })
             set(.loading)
             let config = WhisperKitConfig(
-                model: Self.modelName,
+                model: model,
                 modelFolder: folder.path,
                 prewarm: true,
                 load: true,
@@ -95,6 +107,26 @@ actor Transcriber {
         } else {
             options.detectLanguage = true
         }
+
+        // Chinese on the accurate model: attempt the punctuation prompt
+        // with the no-speech filters relaxed (they misfire on prompted
+        // decodes). If the prompt flake strikes and the result is empty,
+        // fall through to a plain decode — never worse than turbo behavior.
+        if loadedModel == Self.accurateModel, language == "zh",
+           let tokenizer = pipe.tokenizer {
+            var prompted = options
+            prompted.promptTokens = tokenizer.encode(text: " " + Self.zhPunctuationPrompt)
+                .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+            prompted.usePrefillPrompt = true
+            prompted.firstTokenLogProbThreshold = -1e9
+            prompted.logProbThreshold = -1e9
+            prompted.noSpeechThreshold = 1.0
+            let promptedResults = try await pipe.transcribe(audioArray: samples, decodeOptions: prompted)
+            let promptedText = promptedResults.map(\.text).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !promptedText.isEmpty { return promptedText }
+        }
+
         let results = try await pipe.transcribe(audioArray: samples, decodeOptions: options)
         return results.map(\.text).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
