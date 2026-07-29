@@ -169,10 +169,14 @@ struct ContentView: View {
                         Text(tone.detail)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Text("“\(tone.example)”")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
                     .tag(tone.rawValue)
                 }
             }
+            .pickerStyle(.navigationLink)
             TextField("Names, jargon, punctuation style…",
                       text: $promptText, axis: .vertical)
                 .lineLimit(2...4)
