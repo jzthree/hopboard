@@ -5,10 +5,16 @@ struct KeyboardRootView: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        VStack(spacing: 6) {
-            centerStage
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            keyRow
+        Group {
+            if model.typingMode {
+                TypePad(model: model)
+            } else {
+                VStack(spacing: 6) {
+                    centerStage
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    keyRow
+                }
+            }
         }
         .padding(.horizontal, 10)
         .padding(.top, 6)
@@ -107,6 +113,9 @@ struct KeyboardRootView: View {
                         model.showingHistory = true
                     }
                 }
+                chip("abc", icon: "keyboard") {
+                    model.setTyping(true)
+                }
             }
 
         case .loading(let status):
@@ -134,6 +143,9 @@ struct KeyboardRootView: View {
                         .padding(.vertical, 7)
                         .glassPill(tint: .green)
                 } else {
+                    chip("abc", icon: "keyboard") {
+                        model.setTyping(true)
+                    }
                     chip(model.tone.shortLabel, icon: "wand.and.stars") {
                         model.cycleTone()
                     }
@@ -265,6 +277,112 @@ struct KeyboardRootView: View {
                 .background(keyBackground)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The correction pad: a deliberately minimal QWERTY for typing "yes"
+/// instead of dictating it. No autocorrect, no prediction, no prose
+/// ambitions — the mic key returns to dictation.
+struct TypePad: View {
+    @ObservedObject var model: KeyboardModel
+    @State private var shifted = false
+    @State private var symbols = false
+
+    private static let row1 = ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]
+    private static let row2 = ["a", "s", "d", "f", "g", "h", "j", "k", "l"]
+    private static let row3 = ["z", "x", "c", "v", "b", "n", "m"]
+    private static let sym1 = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    private static let sym2 = ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]
+    private static let sym3 = [".", ",", "?", "!", "'"]
+
+    var body: some View {
+        VStack(spacing: 8) {
+            letterRow(symbols ? Self.sym1 : Self.row1)
+            letterRow(symbols ? Self.sym2 : Self.row2)
+                .padding(.horizontal, symbols ? 0 : 14)
+            HStack(spacing: 6) {
+                if symbols {
+                    Spacer().frame(width: 40)
+                } else {
+                    controlKey(shifted ? "shift.fill" : "shift") { shifted.toggle() }
+                }
+                letterRow(symbols ? Self.sym3 : Self.row3)
+                    .padding(.horizontal, symbols ? 24 : 0)
+                RepeatKey(systemName: "delete.left") { model.deleteTapped() }
+                    .frame(width: 40, height: 40)
+                    .background(padKeyBackground)
+            }
+            HStack(spacing: 6) {
+                Button {
+                    symbols.toggle()
+                    shifted = false
+                } label: {
+                    Text(symbols ? "abc" : "123")
+                        .font(.subheadline)
+                        .frame(width: 46, height: 40)
+                        .background(padKeyBackground)
+                }
+                .buttonStyle(.plain)
+                Button {
+                    model.setTyping(false)
+                } label: {
+                    Image(systemName: "mic.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 46, height: 40)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(FlowBrand.accent))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to dictation")
+                key("space") { model.spaceTapped() }
+                key("return") { model.returnTapped() }
+                    .frame(width: 88)
+            }
+        }
+    }
+
+    private func letterRow(_ letters: [String]) -> some View {
+        HStack(spacing: 5) {
+            ForEach(letters, id: \.self) { letter in
+                Button {
+                    model.typeText(shifted ? letter.uppercased() : letter)
+                    if shifted { shifted = false }
+                } label: {
+                    Text(shifted ? letter.uppercased() : letter)
+                        .font(.system(size: 21))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                        .background(padKeyBackground)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func controlKey(_ systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.subheadline.weight(.medium))
+                .frame(width: 40, height: 40)
+                .background(padKeyBackground)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func key(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .background(padKeyBackground)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var padKeyBackground: some View {
+        RoundedRectangle(cornerRadius: 7)
+            .fill(Color(.secondarySystemFill))
     }
 }
 

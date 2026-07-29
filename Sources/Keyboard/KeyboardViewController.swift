@@ -30,7 +30,8 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         // Custom keyboards choose their own height; Apple sets no minimum.
         // 124 pt ≈ 57% of the ~216 pt system keyboard: one mic/status row
-        // and one key row — a remote control, not a letter grid.
+        // and one key row — a remote control, not a letter grid. The
+        // correction pad temporarily grows it back to ~216.
         if heightConstraint == nil {
             let constraint = view.heightAnchor.constraint(equalToConstant: 124)
             constraint.priority = .init(999)
@@ -68,6 +69,10 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     var keyboardHasFullAccess: Bool { hasFullAccess }
+
+    func setKeyboardHeight(_ height: CGFloat) {
+        heightConstraint?.constant = height
+    }
 }
 
 /// The required input-mode switch key. UIKit needs the raw control events

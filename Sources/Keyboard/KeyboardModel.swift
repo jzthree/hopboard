@@ -22,6 +22,9 @@ final class KeyboardModel: ObservableObject {
     /// dismissed mid-transcribe) is recoverable with a preview.
     @Published private(set) var historyItems: [FlowResult] = []
     @Published var showingHistory = false
+    /// The correction pad: a minimal QWERTY for typing "yes" instead of
+    /// dictating it. Temporary by design — no autocorrect, no prose.
+    @Published private(set) var typingMode = false
     /// When the current recording started — drives the live timer that
     /// makes the recording state unmissable.
     @Published private(set) var recordingStartedAt: Date?
@@ -65,6 +68,7 @@ final class KeyboardModel: ObservableObject {
 
     func becameVisible(showsGlobe: Bool) {
         self.showsGlobe = showsGlobe
+        controller?.setKeyboardHeight(typingMode ? 216 : 124)
         ipcAvailable = store.isAvailable
         if ipcAvailable {
             store.keyboardSeen = true
@@ -82,6 +86,7 @@ final class KeyboardModel: ObservableObject {
         pollTimer?.invalidate()
         pollTimer = nil
         showingHistory = false
+        typingMode = false   // the pad is temporary by design
         // Don't leave the app recording into the void if the user dismissed
         // the keyboard mid-dictation. A transcription already in flight is
         // NOT cancelled and awaitingResultSince deliberately survives —
@@ -133,6 +138,16 @@ final class KeyboardModel: ObservableObject {
     func deleteTapped() { controller?.deleteBackwardOnce() }
     func spaceTapped() { controller?.insertSpace() }
     func returnTapped() { controller?.insertNewline() }
+
+    func setTyping(_ on: Bool) {
+        typingMode = on
+        showingHistory = false
+        controller?.setKeyboardHeight(on ? 216 : 124)
+    }
+
+    func typeText(_ text: String) {
+        controller?.insert(text)
+    }
 
     // MARK: state sync
 
