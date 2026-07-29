@@ -6,6 +6,9 @@ final class InMemoryBackend: FlowBackend {
     func data(forKey key: String) -> Data? { storage[key] }
     func set(_ data: Data, forKey key: String) { storage[key] = data }
     func removeValue(forKey key: String) { storage[key] = nil }
+    func keys(withPrefix prefix: String) -> [String] {
+        storage.keys.filter { $0.hasPrefix(prefix) }
+    }
 }
 
 final class FlowIPCTests: XCTestCase {
@@ -16,11 +19,13 @@ final class FlowIPCTests: XCTestCase {
         store = FlowStore(backend: InMemoryBackend())
     }
 
-    func testCommandRoundTripIsConsumedOnce() {
+    func testCommandQueuePreservesOrderAndDrainsOnce() {
         store.send(.startSegment)
-        let taken = store.takeCommand()
-        XCTAssertEqual(taken?.action, .startSegment)
-        XCTAssertNil(store.takeCommand(), "a command must be consumed exactly once")
+        store.send(.stopSegment)
+        let taken = store.takeCommands()
+        XCTAssertEqual(taken.map(\.action), [.startSegment, .stopSegment],
+                       "a fast start+stop pair must survive as a pair, in order")
+        XCTAssertTrue(store.takeCommands().isEmpty, "commands drain exactly once")
     }
 
     func testResultConsumption() {

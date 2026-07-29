@@ -55,6 +55,7 @@ protocol FlowBackend {
     func data(forKey key: String) -> Data?
     func set(_ data: Data, forKey key: String)
     func removeValue(forKey key: String)
+    func keys(withPrefix prefix: String) -> [String]
 }
 
 /// Keychain-backed shared storage. Items live in the team access group with
@@ -91,6 +92,22 @@ final class KeychainBackend: FlowBackend {
 
     func removeValue(forKey key: String) {
         SecItemDelete(baseQuery(for: key) as CFDictionary)
+    }
+
+    func keys(withPrefix prefix: String) -> [String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Flow.keychainService,
+            kSecAttrAccessGroup as String: Flow.keychainAccessGroup,
+            kSecUseDataProtectionKeychain as String: true,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let items = out as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+            .filter { $0.hasPrefix(prefix) }
     }
 }
 
@@ -168,20 +185,33 @@ final class FlowStore {
     }
 
     // MARK: commands (keyboard writes, app reads)
+    //
+    // A QUEUE, not a slot: each command is its own item under a sortable
+    // key. A single shared slot lost the start command whenever start and
+    // stop landed inside one poll interval — the app then ignored the
+    // orphan stop and the keyboard spun on "Transcribing…" forever.
 
     func send(_ action: FlowCommand.Action) {
         let command = FlowCommand(id: UUID(), action: action, sentAt: Date().timeIntervalSince1970)
-        if let data = try? encoder.encode(command) {
-            backend.set(data, forKey: Key.command)
-        }
+        guard let data = try? encoder.encode(command) else { return }
+        let key = Key.command + String(format: ".%013.0f.%@",
+                                       command.sentAt * 1000,
+                                       String(command.id.uuidString.prefix(8)))
+        backend.set(data, forKey: key)
     }
 
-    /// Reads the pending command exactly once.
-    func takeCommand() -> FlowCommand? {
-        guard let data = backend.data(forKey: Key.command),
-              let command = try? decoder.decode(FlowCommand.self, from: data) else { return nil }
-        backend.removeValue(forKey: Key.command)
-        return command
+    /// Drains every pending command, oldest first.
+    func takeCommands() -> [FlowCommand] {
+        let keys = backend.keys(withPrefix: Key.command + ".").sorted()
+        var commands: [FlowCommand] = []
+        for key in keys {
+            if let data = backend.data(forKey: key),
+               let command = try? decoder.decode(FlowCommand.self, from: data) {
+                commands.append(command)
+            }
+            backend.removeValue(forKey: key)
+        }
+        return commands
     }
 
     // MARK: results (app writes, keyboard consumes)

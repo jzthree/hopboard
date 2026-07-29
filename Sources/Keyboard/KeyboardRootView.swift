@@ -176,13 +176,20 @@ struct KeyboardRootView: View {
             HStack(spacing: 12) {
                 ProgressView()
                     .frame(width: 52, height: 52)
-                Text("Transcribing…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Transcribing…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("tap to dismiss")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
                 Spacer(minLength: 0)
                 endButton
             }
             .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+            .onTapGesture { model.cancelWaiting() }
         }
     }
 

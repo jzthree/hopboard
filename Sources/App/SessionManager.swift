@@ -198,12 +198,16 @@ final class SessionManager: ObservableObject {
         // The keyboard's tone chip writes straight to the store and pings
         // this notification; keep the app UI in sync even with no command.
         if tone != store.tone { tone = store.tone }
-        guard let command = store.takeCommand() else { return }
-        switch command.action {
-        case .startSegment: beginSegment()
-        case .stopSegment: finishSegment()
-        case .cancelSegment: cancelSegment()
-        case .endSession: endSession()
+        // Process every queued command in order — a fast start+stop pair
+        // becomes a legitimate (short, likely empty) dictation instead of a
+        // lost start and a stuck keyboard.
+        for command in store.takeCommands() {
+            switch command.action {
+            case .startSegment: beginSegment()
+            case .stopSegment: finishSegment()
+            case .cancelSegment: cancelSegment()
+            case .endSession: endSession()
+            }
         }
     }
 

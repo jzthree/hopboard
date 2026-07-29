@@ -94,6 +94,13 @@ final class KeyboardModel: ObservableObject {
         state = .noSession
     }
 
+    /// Manual escape from the transcribing spinner (tap to dismiss).
+    func cancelWaiting() {
+        awaitingResultSince = nil
+        send(.cancelSegment)
+        refresh()
+    }
+
     /// Tone chip: cycle Formal → Casual → no caps → Excited!.
     func cycleTone() {
         tone = tone.next
@@ -130,6 +137,16 @@ final class KeyboardModel: ObservableObject {
         guard ipcAvailable else {
             state = .needsFullAccess
             return
+        }
+        // Escape hatches for a stranded spinner: if the app is back to
+        // ready and nothing arrived for us within 10 s — or 45 s outright —
+        // stop waiting. The command queue makes this rare; this makes it
+        // survivable.
+        if let since = awaitingResultSince {
+            let waited = Date().timeIntervalSince(since)
+            if waited > 45 || (store.state == .ready && waited > 10) {
+                awaitingResultSince = nil
+            }
         }
         tone = store.tone
         historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
