@@ -191,12 +191,18 @@ final class FlowStore {
     // stop landed inside one poll interval — the app then ignored the
     // orphan stop and the keyboard spun on "Transcribing…" forever.
 
+    /// Tiebreaker for commands enqueued within the same millisecond — a
+    /// random suffix let a same-ms start+stop pair drain out of order.
+    /// Single writer (the keyboard), so a process-local counter suffices.
+    private var commandSequence = 0
+
     func send(_ action: FlowCommand.Action) {
         let command = FlowCommand(id: UUID(), action: action, sentAt: Date().timeIntervalSince1970)
         guard let data = try? encoder.encode(command) else { return }
-        let key = Key.command + String(format: ".%013.0f.%@",
+        commandSequence += 1
+        let key = Key.command + String(format: ".%013.0f.%04d",
                                        command.sentAt * 1000,
-                                       String(command.id.uuidString.prefix(8)))
+                                       commandSequence % 10000)
         backend.set(data, forKey: key)
     }
 

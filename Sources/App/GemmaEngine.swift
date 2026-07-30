@@ -171,13 +171,15 @@ actor GemmaEngine {
         llama_memory_clear(llama_get_memory(context), true)
 
         let marker = String(cString: mtmd_default_marker())
-        // NOTE: do NOT prefill an empty thought block here — tried as a
-        // latency fix, and it broke generation outright (empty output for
-        // every dictation). The model thinks, stripThinking() parses; the
-        // A19 GPU turns out to chew through the preamble in a few seconds.
-        let prompt = "<start_of_turn>user\n"
+        // Gemma 4's template is NOT Gemma 3's <start_of_turn> — it uses
+        // <|turn>…<turn|> markers (ground truth: the GGUF's own jinja
+        // template rendered for one user turn). The wrong markers made the
+        // model EOG instantly — every dictation came back empty. BOS is
+        // added by tokenize (add_special), not written here. And do NOT
+        // prefill an empty thought block — tried, also breaks generation.
+        let prompt = "<|turn>user\n"
             + Self.instruction(language: language, tone: tone)
-            + "\n" + marker + "<end_of_turn>\n<start_of_turn>model\n"
+            + " " + marker + "<turn|>\n<|turn>model\n"
 
         guard let bitmap = samples.withUnsafeBufferPointer({
             mtmd_bitmap_init_from_audio(samples.count, $0.baseAddress)
@@ -247,6 +249,7 @@ actor GemmaEngine {
             text = String(text[range.upperBound...])
         }
         text = text.replacingOccurrences(of: "<end_of_turn>", with: "")
+        text = text.replacingOccurrences(of: "<turn|>", with: "")
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
