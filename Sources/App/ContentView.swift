@@ -135,7 +135,7 @@ struct ContentView: View {
                     }
                 }
                 .foregroundStyle(.secondary)
-                Text("The first load after an install or update optimizes for the Neural Engine and can take a couple of minutes. After that it's seconds, and the model stays loaded between sessions.")
+                Text("Keep HopBoard open — loading pauses if you leave. The first load after an install or update optimizes for the Neural Engine and can take a couple of minutes; after that it's seconds, and the model stays loaded between sessions.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

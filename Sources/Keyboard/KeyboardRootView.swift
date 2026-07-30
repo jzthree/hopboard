@@ -121,28 +121,58 @@ struct KeyboardRootView: View {
             }
 
         case .loading(let status):
-            HStack(spacing: 10) {
-                ProgressView()
-                Text(status.isEmpty ? "Preparing model…" : status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+            // The model only loads while HopBoard is foreground — so the
+            // honest affordance here is "go back to the app", full-row tap.
+            HStack(spacing: 8) {
+                Button {
+                    openURL(Flow.startSessionURL)
+                } label: {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(status.isEmpty ? "Preparing model…" : status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Text("Loading runs only inside HopBoard — tap to open")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(KeyStyle())
                 endButton
             }
             .padding(.horizontal, 4)
 
         case .ready:
-            // The mic is the most-tapped control: keep everything else on
-            // the far side of a spacer so nothing sits in mistouch range.
-            HStack(spacing: 8) {
-                micButton(recording: false)
-                Spacer(minLength: 16)
+            // Eyes-free first: the ENTIRE leading region is the mic's tap
+            // target — the drawn circle is just its center of gravity. The
+            // chips live in a separate trailing cluster, outside the zone.
+            HStack(spacing: 12) {
+                Button {
+                    model.micTapped()
+                } label: {
+                    HStack {
+                        micVisual(recording: false)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(KeyStyle())
+                .accessibilityLabel("Start dictating")
+
                 if model.justInserted {
                     Label("Inserted", systemImage: "checkmark.circle.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.green)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
+                        .frame(height: 38)
                         .glassPill(tint: .green)
                 } else {
                     chip("abc", icon: "keyboard") {
@@ -162,29 +192,43 @@ struct KeyboardRootView: View {
             .padding(.horizontal, 4)
 
         case .recording:
-            HStack(spacing: 14) {
-                micButton(recording: true)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Circle().fill(.red).frame(width: 8, height: 8)
-                        Text("Recording")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.red)
-                        if let start = model.recordingStartedAt {
-                            Text(timerInterval: start...Date.distantFuture, countsDown: false)
-                                .font(.caption.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(.red)
+            // Eyes-free stop: the whole red surface stops and transcribes;
+            // only the ✕ (end session) sits outside it.
+            HStack(spacing: 8) {
+                Button {
+                    model.micTapped()
+                } label: {
+                    HStack(spacing: 14) {
+                        micVisual(recording: true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Circle().fill(.red).frame(width: 8, height: 8)
+                                Text("Recording")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.red)
+                                if let start = model.recordingStartedAt {
+                                    Text(timerInterval: start...Date.distantFuture, countsDown: false)
+                                        .font(.caption.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(.red)
+                                }
+                            }
+                            KeyboardLevelMeter(level: model.micLevel)
+                                .frame(height: 18)
+                            Text("tap anywhere to stop")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
+                        Spacer(minLength: 0)
                     }
-                    KeyboardLevelMeter(level: model.micLevel)
-                        .frame(height: 22)
+                    .padding(.horizontal, 10)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.12)))
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(KeyStyle())
+                .accessibilityLabel("Stop and transcribe")
                 endButton
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.12)))
 
         case .transcribing:
             HStack(spacing: 12) {
@@ -200,18 +244,21 @@ struct KeyboardRootView: View {
         }
     }
 
-    /// Small pill control for the ready row (tone cycle, History).
+    /// Pill control for the ready row (abc, tone, History): 38 pt tall so
+    /// the drawn pill is an honest tap target.
     private func chip(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(label, systemImage: icon)
                 .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
+                .padding(.horizontal, 11)
+                .frame(height: 38)
                 .glassPill()
+                .contentShape(Capsule())
         }
         .buttonStyle(KeyStyle())
     }
 
+    /// End-session ✕ with a real 44 pt target.
     private var endButton: some View {
         Button {
             model.endSessionTapped()
@@ -219,28 +266,27 @@ struct KeyboardRootView: View {
             Image(systemName: "xmark.circle.fill")
                 .font(.title3)
                 .foregroundStyle(.secondary)
+                .frame(width: 44, height: 56)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(KeyStyle())
         .accessibilityLabel("End Session")
     }
 
-    private func micButton(recording: Bool) -> some View {
-        Button {
-            model.micTapped()
-        } label: {
-            ZStack {
-                if recording { RecordingPulse().frame(width: 52, height: 52) }
-                Circle()
-                    .fill(recording ? Color.red : FlowBrand.accent)
-                    .frame(width: 52, height: 52)
-                    .shadow(color: (recording ? Color.red : FlowBrand.accent).opacity(0.35),
-                            radius: recording ? 10 : 6)
-                Image(systemName: recording ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
+    /// The mic/stop circle — purely visual; its Button wrapper supplies
+    /// the (much larger) tap zone.
+    private func micVisual(recording: Bool) -> some View {
+        ZStack {
+            if recording { RecordingPulse().frame(width: 56, height: 56) }
+            Circle()
+                .fill(recording ? Color.red : FlowBrand.accent)
+                .frame(width: 56, height: 56)
+                .shadow(color: (recording ? Color.red : FlowBrand.accent).opacity(0.35),
+                        radius: recording ? 10 : 6)
+            Image(systemName: recording ? "stop.fill" : "mic.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
         }
-        .buttonStyle(KeyStyle())
-        .accessibilityLabel(recording ? "Stop and transcribe" : "Start dictating")
     }
 
     // MARK: bottom key row

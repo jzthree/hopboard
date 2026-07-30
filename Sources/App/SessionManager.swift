@@ -89,6 +89,10 @@ final class SessionManager: ObservableObject {
 
         publish(.loading)
         store.modelStatus = "Preparing model…"
+        // Heartbeat from the FIRST moment, not from session-ready: model
+        // loading has quiet stretches with no state writes, and a stale
+        // heartbeat made the keyboard flicker to "Start Session" mid-load.
+        startHeartbeat()
 
         let transcriber = self.transcriber ?? Transcriber { [weak self] modelState in
             Task { @MainActor in self?.applyModelState(modelState) }
@@ -230,6 +234,7 @@ final class SessionManager: ObservableObject {
         state = new
         store.state = new
         store.heartbeat = Date()
+        if new == .idle { heartbeatTimer?.invalidate() }
         bus.post(Flow.stateNotification)
     }
 
