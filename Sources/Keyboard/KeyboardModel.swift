@@ -78,11 +78,17 @@ final class KeyboardModel: ObservableObject {
     func becameVisible(showsGlobe: Bool) {
         self.showsGlobe = showsGlobe
         controller?.setKeyboardHeight(typingMode ? 216 : 124)
-        ipcAvailable = store.isAvailable
-        if ipcAvailable {
-            store.keyboardSeen = true
+        // NO keychain traffic on the launch path: the keyboard service's
+        // watchdog kills slow cold starts (worst right after an app update,
+        // when everything is uncached) and iOS then skips to the next
+        // keyboard. First frame renders from defaults; the probe and state
+        // sync run right after.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.ipcAvailable = self.store.isAvailable
+            if self.ipcAvailable { self.store.keyboardSeen = true }
+            self.refresh()
         }
-        refresh()
         // Darwin notifications cover the happy path; the poll covers a
         // suspended app, dropped notifications, and heartbeat expiry.
         pollTimer?.invalidate()
