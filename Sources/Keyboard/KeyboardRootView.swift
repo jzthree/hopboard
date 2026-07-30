@@ -113,9 +113,6 @@ struct KeyboardRootView: View {
                         model.showingHistory = true
                     }
                 }
-                chip("abc", icon: "keyboard") {
-                    model.setTyping(true)
-                }
             }
 
         case .loading(let status):
@@ -190,9 +187,6 @@ struct KeyboardRootView: View {
                     }
                     .buttonStyle(KeyStyle())
                 } else {
-                    iconChip("keyboard", label: "Type") {
-                        model.setTyping(true)
-                    }
                     chip(model.tone.shortLabel, icon: "wand.and.stars") {
                         model.cycleTone()
                     }
@@ -317,6 +311,17 @@ struct KeyboardRootView: View {
                     .frame(width: 44, height: 42)
                     .background(keyBackground)
             }
+            Button {
+                model.setTyping(true)
+            } label: {
+                Text("abc")
+                    .font(.subheadline)
+                    .frame(width: 44, height: 42)
+                    .background(keyBackground)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(KeyStyle())
+            .accessibilityLabel("Type instead of dictating")
             key("space", flexible: true) { model.spaceTapped() }
             RepeatKey(systemName: "delete.left") { model.deleteTapped() }
                 .frame(maxWidth: .infinity)
