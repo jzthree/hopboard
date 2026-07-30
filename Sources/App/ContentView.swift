@@ -9,6 +9,7 @@ struct ContentView: View {
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Whisper's own language table (name → code), prettified and sorted.
     private static let languageChoices: [(name: String, code: String)] =
@@ -39,7 +40,15 @@ struct ContentView: View {
             .navigationTitle("HopBoard")
             .tint(FlowBrand.accent)
             .animation(.snappy, value: session.state)
-            .onAppear { if !onboarded { showOnboarding = true } }
+            .onAppear {
+                if !onboarded { showOnboarding = true }
+                session.refreshSetupState()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // Coming back from Settings: reflect the keyboard toggle
+                // immediately so the user sees that it worked.
+                if phase == .active { session.refreshSetupState() }
+            }
             .onChange(of: session.modelState) { _, new in
                 if case .loading = new {
                     if loadingStart == nil { loadingStart = Date() }
@@ -253,19 +262,35 @@ struct ContentView: View {
     // MARK: setup checklist
 
     private var setupComplete: Bool {
-        session.micPermission == .granted && session.keyboardSeen
+        session.micPermission == .granted && session.keyboardEnabled && session.keyboardSeen
     }
 
     private var setupSection: some View {
         Section("Setup") {
+            // Microphone: don't show an unactionable to-do before iOS has
+            // ever asked — there is nothing the user can do until then.
+            switch session.micPermission {
+            case .granted:
+                checklistRow(state: .done, title: "Microphone access", detail: "")
+            case .denied:
+                checklistRow(state: .blocked,
+                             title: "Microphone access denied",
+                             detail: "Open Settings → Microphone and turn it on.")
+            default:
+                checklistRow(state: .pending,
+                             title: "Microphone access",
+                             detail: "iOS asks automatically when you start your first session — nothing to do yet.")
+            }
             checklistRow(
-                done: session.micPermission == .granted,
-                title: "Allow microphone access",
-                detail: "Asked when you start your first session.")
+                state: session.keyboardEnabled ? .done : .todo,
+                title: "Enable the HopBoard keyboard",
+                detail: "Tap Open Settings below → Keyboards → turn on HopBoard and Allow Full Access.")
             checklistRow(
-                done: session.keyboardSeen,
-                title: "Enable the keyboard",
-                detail: "Settings → General → Keyboard → Keyboards → Add New Keyboard → HopBoard, then turn on Allow Full Access.")
+                state: session.keyboardSeen ? .done : .pending,
+                title: "Full Access working",
+                detail: session.keyboardEnabled
+                    ? "Confirmed automatically the first time you use the HopBoard keyboard."
+                    : "Confirmed automatically once the keyboard is enabled and used.")
             Button {
                 UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
             } label: {
@@ -274,13 +299,23 @@ struct ContentView: View {
         }
     }
 
-    private func checklistRow(done: Bool, title: String, detail: String) -> some View {
+    private enum ChecklistState { case done, todo, pending, blocked }
+
+    private func checklistRow(state: ChecklistState, title: String, detail: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(done ? Color.green : Color.secondary)
+            switch state {
+            case .done:
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            case .todo:
+                Image(systemName: "circle").foregroundStyle(.secondary)
+            case .pending:
+                Image(systemName: "circle.dashed").foregroundStyle(.tertiary)
+            case .blocked:
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                if !done {
+                if state != .done, !detail.isEmpty {
                     Text(detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)

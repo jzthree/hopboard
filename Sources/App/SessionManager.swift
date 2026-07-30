@@ -43,6 +43,7 @@ final class SessionManager: ObservableObject {
     init() {
         transcripts = store.results
         tone = store.tone
+        refreshSetupState()
         // A fresh launch means any previous session died with the process.
         publish(.idle)
         bus.observe(Flow.commandNotification) { [weak self] in
@@ -62,6 +63,18 @@ final class SessionManager: ObservableObject {
     }
 
     var keyboardSeen: Bool { store.keyboardSeen }
+
+    /// Whether the HopBoard keyboard is enabled in Settings — readable
+    /// live from the system's enabled-keyboards list, so the checklist
+    /// updates the moment the user returns from Settings.
+    @Published private(set) var keyboardEnabled = false
+
+    func refreshSetupState() {
+        micPermission = AVAudioApplication.shared.recordPermission
+        let keyboards = UserDefaults.standard.array(forKey: "AppleKeyboards") as? [String] ?? []
+        keyboardEnabled = keyboards.contains { $0.contains("io.zhoulab.hopboard.keyboard") }
+        objectWillChange.send()
+    }
 
     // MARK: session lifecycle
 
