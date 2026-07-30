@@ -141,6 +141,9 @@ final class SessionManager: ObservableObject {
         recorder.onWindow = { [weak self] window in
             Task { @MainActor in self?.enqueueWindow(window) }
         }
+        // Gemma's audio encoder hits device batch limits past ~25 s of
+        // audio — feed it shorter windows; Whisper keeps its native 30 s.
+        recorder.windowSeconds = choice == "gemma" ? 12 : 30
         do {
             try recorder.start()
         } catch {

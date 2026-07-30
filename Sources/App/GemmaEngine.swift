@@ -99,7 +99,10 @@ actor GemmaEngine {
 
             var ctxParams = llama_context_default_params()
             ctxParams.n_ctx = 4096
-            ctxParams.n_batch = 1024
+            // Long audio overflows a small batch: ~30s of audio tokens blew
+            // past 1024 and mtmd eval failed with -3 on device. Segments are
+            // also capped at 12s for this engine (SessionManager).
+            ctxParams.n_batch = 2048
             guard let context = llama_init_from_model(model, ctxParams) else {
                 throw NSError(domain: "Gemma", code: 2,
                               userInfo: [NSLocalizedDescriptionKey: "Gemma context failed"])
@@ -110,6 +113,7 @@ actor GemmaEngine {
             mtmdParams.use_gpu = true
             mtmdParams.print_timings = false
             mtmdParams.n_threads = 4
+            mtmdParams.batch_max_tokens = 2048
             guard let mtmd = mtmd_init_from_file(files.mmproj.path, model, mtmdParams) else {
                 throw NSError(domain: "Gemma", code: 3,
                               userInfo: [NSLocalizedDescriptionKey: "Audio projector failed to load"])
@@ -218,7 +222,7 @@ actor GemmaEngine {
         }
 
         var nPast: llama_pos = 0
-        let evalResult = mtmd_helper_eval_chunks(mtmd, context, chunks, 0, 0, 1024, true, &nPast)
+        let evalResult = mtmd_helper_eval_chunks(mtmd, context, chunks, 0, 0, 2048, true, &nPast)
         guard evalResult == 0 else {
             lastDiagnostic = "audio eval failed (\(evalResult))"
             throw NSError(domain: "Gemma", code: 9,

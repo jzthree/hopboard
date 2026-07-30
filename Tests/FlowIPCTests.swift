@@ -73,7 +73,7 @@ final class FlowIPCTests: XCTestCase {
         let rate = Int(AudioRecorder.targetSampleRate)
         var samples = [Float](repeating: 0.5, count: rate * 31)
         for i in (rate * 27)..<(rate * 27 + rate / 2) { samples[i] = 0.0001 }
-        let cut = AudioRecorder.quietCutIndex(in: samples)
+        let cut = AudioRecorder.quietCutIndex(in: samples, windowFrames: rate * 30)
         XCTAssertGreaterThan(cut, rate * 26)
         XCTAssertLessThan(cut, rate * 28)
     }
@@ -81,7 +81,7 @@ final class FlowIPCTests: XCTestCase {
     func testQuietCutIndexUniformFallsBackToWindowEnd() {
         let rate = Int(AudioRecorder.targetSampleRate)
         let samples = [Float](repeating: 0.5, count: rate * 30)
-        let cut = AudioRecorder.quietCutIndex(in: samples)
+        let cut = AudioRecorder.quietCutIndex(in: samples, windowFrames: rate * 30)
         // Uniform energy: any cut in the search region is fine, but it must
         // stay inside the completed window.
         XCTAssertLessThanOrEqual(cut, rate * 30)

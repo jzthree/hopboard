@@ -25,15 +25,18 @@ final class AudioRecorder {
     /// callee owns (and should discard) it after transcribing.
     var onWindow: (([Float]) -> Void)?
 
-    /// Long dictations roll out in ~30 s windows (Whisper's native span),
-    /// cut at the quietest 200 ms in the last few seconds to avoid
-    /// splitting mid-word.
-    static let windowFrames = Int(targetSampleRate) * 30
+    /// Long dictations roll out in windows, cut at the quietest 200 ms in
+    /// the last few seconds to avoid splitting mid-word. 30 s is Whisper's
+    /// native span; Gemma's audio encoder needs shorter chunks (12 s) to
+    /// stay inside device batch limits — set per session.
+    var windowSeconds = 30
     static let windowSearchFrames = Int(targetSampleRate) * 5
+
+    var windowFrames: Int { Int(Self.targetSampleRate) * windowSeconds }
 
     /// The quietest cut point inside the search region at the end of a
     /// full window. Pure function, unit-tested.
-    static func quietCutIndex(in samples: [Float]) -> Int {
+    static func quietCutIndex(in samples: [Float], windowFrames: Int) -> Int {
         let end = min(windowFrames, samples.count)
         let hop = Int(targetSampleRate) / 5  // 200 ms
         var best = end
@@ -186,8 +189,8 @@ final class AudioRecorder {
             samples.append(contentsOf: chunk)
         }
         var window: [Float]?
-        if capturing, samples.count >= Self.windowFrames {
-            let cut = Self.quietCutIndex(in: samples)
+        if capturing, samples.count >= windowFrames {
+            let cut = Self.quietCutIndex(in: samples, windowFrames: windowFrames)
             window = Array(samples[0..<cut])
             samples.removeFirst(cut)
         }
