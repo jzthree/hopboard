@@ -1,16 +1,16 @@
-# flowboard — build, test, and install without remembering flags.
+# hopboard — build, test, and install without remembering flags.
 #   make test       run the unit suite in the simulator
 #   make install    build signed (Release) and install to the iPhone
 #   make sim        build + launch in the simulator
-#   make shot       screenshot the simulator to /tmp/flowboard.png
+#   make shot       screenshot the simulator to /tmp/hopboard.png
 DEVICE ?= FA720813-48B6-5E57-984D-C76733368A9D
 SIMNAME ?= iPhone 17 Pro
 SIM ?= 56F2687C-0938-490F-ABC4-18461A4D8F36
-BUNDLE = io.zhoulab.flowboard
-PROJECT = FlowBoard.xcodeproj
-SCHEME = FlowBoard
-APP = build/Build/Products/Release-iphoneos/FlowBoard.app
-SIMAPP = build-sim/Build/Products/Debug-iphonesimulator/FlowBoard.app
+BUNDLE = io.zhoulab.hopboard
+PROJECT = HopBoard.xcodeproj
+SCHEME = HopBoard
+APP = build/Build/Products/Release-iphoneos/HopBoard.app
+SIMAPP = build-sim/Build/Products/Debug-iphonesimulator/HopBoard.app
 # Every install identifiable on the device (learned from hop-ios).
 BUILDNO = $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 VERSION_FLAGS = CURRENT_PROJECT_VERSION=$(BUILDNO)
@@ -53,13 +53,13 @@ install: build
 	done; echo "install failed — unlock the phone or plug in a cable"; exit 1
 
 shot:
-	xcrun simctl io $(SIM) screenshot /tmp/flowboard.png && echo "wrote /tmp/flowboard.png"
+	xcrun simctl io $(SIM) screenshot /tmp/hopboard.png && echo "wrote /tmp/hopboard.png"
 
 clean:
 	rm -rf build build-sim $(PROJECT)
 
 # TestFlight: archive (dev-signed) then export re-signs with the ASC-minted
-# "FlowBoard AppStore" profiles and uploads. Needs the app record to exist
+# "HopBoard AppStore" profiles and uploads. Needs the app record to exist
 # in App Store Connect (browser, once). Profiles: scripts/mint_dist_profiles.py.
 ASC_KEY = $(HOME)/.appstoreconnect/private_keys/AuthKey_CCFL4WD4V4.p8
 ASC_AUTH = -authenticationKeyPath $(ASC_KEY) -authenticationKeyID CCFL4WD4V4 \
@@ -68,10 +68,10 @@ ASC_AUTH = -authenticationKeyPath $(ASC_KEY) -authenticationKeyID CCFL4WD4V4 \
 archive: gen
 	xcodebuild archive -project $(PROJECT) -scheme $(SCHEME) \
 	  -destination 'generic/platform=iOS' \
-	  -archivePath build/FlowBoard.xcarchive $(VERSION_FLAGS)
+	  -archivePath build/HopBoard.xcarchive $(VERSION_FLAGS)
 
 testflight: archive
-	xcodebuild -exportArchive -archivePath build/FlowBoard.xcarchive \
+	xcodebuild -exportArchive -archivePath build/HopBoard.xcarchive \
 	  -exportOptionsPlist AppStore/ExportOptions.plist -exportPath build/export \
 	  $(ASC_AUTH)
 	uv run scripts/testflight.py release

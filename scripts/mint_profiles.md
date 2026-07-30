@@ -10,12 +10,12 @@ cd scripts
 uv run --with pyjwt --with cryptography python mint.py
 ```
 
-`mint.py` registers the two bundle IDs (`io.zhoulab.flowboard`,
-`io.zhoulab.flowboard.keyboard`), creates one IOS_APP_DEVELOPMENT profile
+`mint.py` registers the two bundle IDs (`io.zhoulab.hopboard`,
+`io.zhoulab.hopboard.keyboard`), creates one IOS_APP_DEVELOPMENT profile
 per bundle ID (all three team development certificates + Jian's iPhone),
 and writes the `.mobileprovision` files into
 `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`.
-`project.yml` pins them by name (`FlowBoard Dev`, `FlowBoard Keyboard Dev`)
+`project.yml` pins them by name (`HopBoard Dev`, `HopBoard Keyboard Dev`)
 with manual signing. Re-run the script when the profiles expire (dev
 profiles last a year) or when a new device joins; it deletes stale
 same-name profiles first.
@@ -31,7 +31,7 @@ ASC API has **no appGroups resource** (`GET /v1/appGroups` → 404, probed
 live 2026-07-28), and registering one in the developer portal needs a
 browser login. Development profiles for this team carry
 `keychain-access-groups: 5AD7QB9795.*`, so both targets instead declare
-the keychain group `5AD7QB9795.io.zhoulab.flowboard.ipc` and share state
+the keychain group `5AD7QB9795.io.zhoulab.hopboard.ipc` and share state
 through keychain items (see `Sources/Shared/FlowIPC.swift`).
 
 TestFlight/App Store: measured 2026-07-29 — IOS_APP_STORE profiles DO

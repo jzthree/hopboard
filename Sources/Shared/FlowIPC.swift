@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-// The contract between the FlowBoard app and its keyboard extension.
+// The contract between the HopBoard app and its keyboard extension.
 // The keyboard can never touch the microphone (iOS forbids it for every
 // keyboard extension), so the app owns the mic and the model, and the two
 // sides meet in shared storage: payloads in keychain items, wake-ups over
@@ -14,16 +14,16 @@ import Security
 // team keychain group is shared storage both processes can use today.
 
 enum Flow {
-    static let keychainAccessGroup = "5AD7QB9795.io.zhoulab.flowboard.ipc"
-    static let keychainService = "io.zhoulab.flowboard.ipc"
-    static let startSessionURL = URL(string: "flowboard://session/start")!
+    static let keychainAccessGroup = "5AD7QB9795.io.zhoulab.hopboard.ipc"
+    static let keychainService = "io.zhoulab.hopboard.ipc"
+    static let startSessionURL = URL(string: "hopboard://session/start")!
 
     // Darwin notification names are a global namespace — prefix everything.
-    static let commandNotification = "io.zhoulab.flowboard.command"
-    static let stateNotification = "io.zhoulab.flowboard.state"
+    static let commandNotification = "io.zhoulab.hopboard.command"
+    static let stateNotification = "io.zhoulab.hopboard.state"
 
     // A session whose heartbeat is older than this is dead (app was killed
-    // or suspended); the keyboard falls back to "Start Flow Session".
+    // or suspended); the keyboard falls back to "Start Session".
     static let heartbeatTimeout: TimeInterval = 8
 }
 

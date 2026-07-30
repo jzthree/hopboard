@@ -36,7 +36,7 @@ struct ContentView: View {
                 }
                 historySection
             }
-            .navigationTitle("FlowBoard")
+            .navigationTitle("HopBoard")
             .tint(FlowBrand.accent)
             .animation(.snappy, value: session.state)
             .onAppear { if !onboarded { showOnboarding = true } }
@@ -84,14 +84,14 @@ struct ContentView: View {
             Image(systemName: "waveform.circle.fill")
                 .font(.system(size: 56))
                 .foregroundStyle(.tint)
-            Text("Start a Flow Session, then dictate from the FlowBoard keyboard in any app.")
+            Text("Start a Session, then dictate from the HopBoard keyboard in any app.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button {
                 Task { await session.startSession() }
             } label: {
-                Text("Start Flow Session")
+                Text("Start Session")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
@@ -112,7 +112,7 @@ struct ContentView: View {
                 Text("\(Int(fraction * 100))%")
                     .font(.title3.monospacedDigit())
                     .foregroundStyle(.secondary)
-                Text("Keep FlowBoard open until the download finishes.")
+                Text("Keep HopBoard open until the download finishes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .loading:
@@ -193,7 +193,7 @@ struct ContentView: View {
         switch session.state {
         case .recording: "Listening…"
         case .transcribing: "Transcribing…"
-        default: "Session active — switch to any app and dictate from the FlowBoard keyboard. The mic indicator stays on until you end the session."
+        default: "Session active — switch to any app and dictate from the HopBoard keyboard. The mic indicator stays on until you end the session."
         }
     }
 
@@ -265,7 +265,7 @@ struct ContentView: View {
             checklistRow(
                 done: session.keyboardSeen,
                 title: "Enable the keyboard",
-                detail: "Settings → General → Keyboard → Keyboards → Add New Keyboard → FlowBoard, then turn on Allow Full Access.")
+                detail: "Settings → General → Keyboard → Keyboards → Add New Keyboard → HopBoard, then turn on Allow Full Access.")
             Button {
                 UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
             } label: {
@@ -349,7 +349,7 @@ struct ContentView: View {
     }
 }
 
-/// First-run education: why FlowBoard works the way it does. iOS's keyboard
+/// First-run education: why HopBoard works the way it does. iOS's keyboard
 /// mic ban is the single fact that explains every quirk of the app.
 struct OnboardingSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -363,10 +363,10 @@ struct OnboardingSheet: View {
                         "iOS never lets any keyboard extension use the microphone — an Apple privacy rule, with no exception. Every dictation keyboard, including Wispr Flow, has to work around it.")
                     row("waveform",
                         "So the app listens instead",
-                        "Start a Flow Session here, and the FlowBoard app keeps recording in the background. The keyboard is a remote control: it tells the app when to listen and types out what came back.")
+                        "Start a Session here, and the HopBoard app keeps recording in the background. The keyboard is a remote control: it tells the app when to listen and types out what came back.")
                     row("arrow.uturn.backward",
                         "Start, then swipe back",
-                        "After starting a session, swipe back (or use the app switcher) to wherever you were typing. The FlowBoard keyboard picks the session up from there.")
+                        "After starting a session, swipe back (or use the app switcher) to wherever you were typing. The HopBoard keyboard picks the session up from there.")
                     row("circle.fill",
                         "The orange dot is honest",
                         "iOS shows the mic indicator the whole session, because the mic really is on. End the session from the keyboard (✕) or the app when you're done; it also ends itself after 15 idle minutes.",
@@ -375,7 +375,7 @@ struct OnboardingSheet: View {
                     Text("Everything is transcribed on-device by Whisper large-v3-turbo. Audio never leaves your iPhone.")
                 }
             }
-            .navigationTitle("How FlowBoard works")
+            .navigationTitle("How HopBoard works")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button("Got it") { dismiss() }

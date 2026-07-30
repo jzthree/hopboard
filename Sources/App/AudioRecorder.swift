@@ -1,6 +1,6 @@
 import AVFoundation
 
-/// Owns the AVAudioEngine for the lifetime of a Flow Session. The engine
+/// Owns the AVAudioEngine for the lifetime of a Session. The engine
 /// runs continuously — an active audio I/O session is what keeps the app
 /// alive in the background (UIBackgroundModes: audio); samples are only
 /// buffered between beginSegment/takeSegment.
@@ -105,7 +105,7 @@ final class AudioRecorder {
             commonFormat: .pcmFormatFloat32,
             sampleRate: Self.targetSampleRate,
             channels: 1, interleaved: false) else {
-            throw NSError(domain: "FlowBoard", code: 1,
+            throw NSError(domain: "HopBoard", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Could not create 16 kHz format"])
         }
         converter = AVAudioConverter(from: inputFormat, to: outputFormat)

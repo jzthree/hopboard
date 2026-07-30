@@ -1,5 +1,5 @@
 import XCTest
-@testable import FlowBoard
+@testable import HopBoard
 
 final class FlowToneTests: XCTestCase {
     func testFormal() {

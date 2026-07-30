@@ -1,8 +1,8 @@
 build/
 build-sim/
-FlowBoard.xcodeproj/
+HopBoard.xcodeproj/
 .DS_Store
 Sources/App/Info.plist
 Sources/Keyboard/Info.plist
-FlowBoard.entitlements
-FlowBoardKeyboard.entitlements
+HopBoard.entitlements
+HopBoardKeyboard.entitlements

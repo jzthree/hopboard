@@ -2,8 +2,8 @@ import json, base64, sys
 from asc import call
 
 CERTS = ["6A75VFVMVG", "9W7YX8NN6K"]
-BUNDLES = {"io.zhoulab.flowboard": "FlowBoard AppStore",
-           "io.zhoulab.flowboard.keyboard": "FlowBoard Keyboard AppStore"}
+BUNDLES = {"io.zhoulab.hopboard": "HopBoard AppStore",
+           "io.zhoulab.hopboard.keyboard": "HopBoard Keyboard AppStore"}
 
 for bundle_id, name in BUNDLES.items():
     s, d = call("GET", f"/v1/bundleIds?filter[identifier]={bundle_id}")

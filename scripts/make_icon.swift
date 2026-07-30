@@ -1,4 +1,4 @@
-// Renders the FlowBoard app icon: a waveform over a deep indigo→teal
+// Renders the HopBoard app icon: a waveform over a deep indigo→teal
 // gradient. Run: swift scripts/make_icon.swift <output.png>
 import AppKit
 

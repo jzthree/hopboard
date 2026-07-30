@@ -70,7 +70,7 @@ final class SessionManager: ObservableObject {
         lastError = nil
 
         guard await ensureMicPermission() else {
-            lastError = "Microphone access is required. Enable it in Settings → FlowBoard."
+            lastError = "Microphone access is required. Enable it in Settings → HopBoard."
             return
         }
 

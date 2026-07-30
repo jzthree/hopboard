@@ -1,4 +1,4 @@
-# FlowBoard
+# HopBoard
 
 On-device Whisper dictation for iPhone, delivered through a custom
 keyboard — an open, personal take on the Wispr Flow keyboard, powered by
@@ -8,15 +8,15 @@ entirely on the Neural Engine. Audio never leaves the phone.
 ## How it works
 
 iOS forbids every keyboard extension from touching the microphone, so the
-keyboard alone can't dictate. FlowBoard uses the same architecture Wispr
+keyboard alone can't dictate. HopBoard uses the same architecture Wispr
 Flow ships:
 
-1. **The app owns the mic and the model.** "Start Flow Session" spins up
+1. **The app owns the mic and the model.** "Start Session" spins up
    an always-running audio engine (background mode `audio` keeps the app
    alive) and loads Whisper.
 2. **The keyboard is a remote control.** It renders session state, sends
    start/stop commands, and inserts whatever text comes back — talking to
-   the app through shared keychain items (`5AD7QB9795.io.zhoulab.flowboard.ipc`)
+   the app through shared keychain items (`5AD7QB9795.io.zhoulab.hopboard.ipc`)
    plus Darwin notifications. See `scripts/mint_profiles.md` for why
    keychain and not an App Group.
 3. **A segment** is: tap mic on the keyboard → speak → tap stop → the app
@@ -28,23 +28,24 @@ indicator stays on for the whole session — that's iOS being honest, not a
 bug.
 
 Transcription is batch per segment (like OpenSuperWhisper): Whisper runs
-after you tap stop, windowing internally in 30 s chunks for long
-dictations (segments cap at 4 min). The **Custom vocabulary & style**
-field in the app mirrors OpenSuperWhisper's `initialPrompt` — it's
-tokenized and fed to Whisper before every dictation to bias name/jargon
-spelling and punctuation style.
+after you tap stop; long dictations pre-transcribe in ~30 s windows
+while you talk, so only the tail remains at stop. Tone modes (Formal /
+Casual / no caps / Excited) are deterministic post-processing; the
+opt-in Accurate model adds punctuated Chinese via a screened initial
+prompt (see the WhisperKit promptTokens saga in scripts/mint_profiles.md
+and the code comments in Transcriber.swift).
 
 ## First-run setup (on the phone)
 
-1. Open **FlowBoard**, tap **Start Flow Session** — grant mic access,
+1. Open **HopBoard**, tap **Start Session** — grant mic access,
    wait for the one-time 626 MB model download + Neural Engine
    optimization (about a minute; later loads take seconds).
 2. **Settings → General → Keyboard → Keyboards → Add New Keyboard →
-   FlowBoard**, then tap it again and enable **Allow Full Access**.
-3. In any app: globe → FlowBoard → tap the mic and talk.
+   HopBoard**, then tap it again and enable **Allow Full Access**.
+3. In any app: globe → HopBoard → tap the mic and talk.
 
-If the keyboard says there's no session, tap **Start Flow Session** on it
-— it deep-links into the app (`flowboard://session/start`), then swipe
+If the keyboard says there's no session, tap **Start Session** on it
+— it deep-links into the app (`hopboard://session/start`), then swipe
 back and dictate.
 
 ## Development

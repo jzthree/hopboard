@@ -76,9 +76,9 @@ struct KeyboardRootView: View {
         switch model.state {
         case .needsFullAccess:
             VStack(spacing: 2) {
-                Text("Turn on Full Access for FlowBoard")
+                Text("Turn on Full Access for HopBoard")
                     .font(.footnote.weight(.semibold))
-                Text("Settings → General → Keyboard → Keyboards → FlowBoard")
+                Text("Settings → General → Keyboard → Keyboards → HopBoard")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -95,7 +95,7 @@ struct KeyboardRootView: View {
                 Button {
                     openURL(Flow.startSessionURL)
                 } label: {
-                    Label("Start Flow Session", systemImage: "waveform")
+                    Label("Start Session", systemImage: "waveform")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
@@ -104,7 +104,7 @@ struct KeyboardRootView: View {
                 }
                 .buttonStyle(.plain)
                 if model.historyItems.isEmpty {
-                    Text("Opens FlowBoard, then swipe back here.")
+                    Text("Opens HopBoard, then swipe back here.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -218,7 +218,7 @@ struct KeyboardRootView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
         }
-        .accessibilityLabel("End Flow Session")
+        .accessibilityLabel("End Session")
     }
 
     private func micButton(recording: Bool) -> some View {

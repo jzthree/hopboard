@@ -47,7 +47,7 @@ def mint_profile(name, bundle_ref):
         f.write(content)
     print(f"minted '{name}' uuid={uuid} -> {path}")
 
-app_ref = register_bundle_id("io.zhoulab.flowboard", "FlowBoard")
-kb_ref = register_bundle_id("io.zhoulab.flowboard.keyboard", "FlowBoard Keyboard")
-mint_profile("FlowBoard Dev", app_ref)
-mint_profile("FlowBoard Keyboard Dev", kb_ref)
+app_ref = register_bundle_id("io.zhoulab.hopboard", "HopBoard")
+kb_ref = register_bundle_id("io.zhoulab.hopboard.keyboard", "HopBoard Keyboard")
+mint_profile("HopBoard Dev", app_ref)
+mint_profile("HopBoard Keyboard Dev", kb_ref)

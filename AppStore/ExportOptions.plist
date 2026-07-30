@@ -12,10 +12,10 @@
     <string>Apple Distribution</string>
     <key>provisioningProfiles</key>
     <dict>
-        <key>io.zhoulab.flowboard</key>
-        <string>FlowBoard AppStore</string>
-        <key>io.zhoulab.flowboard.keyboard</key>
-        <string>FlowBoard Keyboard AppStore</string>
+        <key>io.zhoulab.hopboard</key>
+        <string>HopBoard AppStore</string>
+        <key>io.zhoulab.hopboard.keyboard</key>
+        <string>HopBoard Keyboard AppStore</string>
     </dict>
     <key>uploadSymbols</key>
     <true/>

@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["PyJWT>=2.8", "cryptography>=42", "requests>=2.31"]
 # ///
-"""TestFlight internal distribution for FlowBoard.
+"""TestFlight internal distribution for HopBoard.
 
 Usage:
   uv run scripts/testflight.py setup <tester-email>   ensure internal group + tester
@@ -22,7 +22,7 @@ KEY_ID = "CCFL4WD4V4"
 ISSUER_ID = "254072af-7f14-4065-acd8-d09fe4924553"
 KEY_PATH = Path.home() / ".appstoreconnect/private_keys" / f"AuthKey_{KEY_ID}.p8"
 BASE = "https://api.appstoreconnect.apple.com"
-BUNDLE_ID = "io.zhoulab.flowboard"
+BUNDLE_ID = "io.zhoulab.hopboard"
 
 
 def app_id() -> str:

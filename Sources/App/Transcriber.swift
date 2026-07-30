@@ -92,7 +92,7 @@ actor Transcriber {
     /// scripts/wktest notes; tone styling is post-processing (FlowTone).
     func transcribe(_ samples: [Float], language: String? = nil) async throws -> String {
         guard let pipe else {
-            throw NSError(domain: "FlowBoard", code: 2,
+            throw NSError(domain: "HopBoard", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
         }
         // Whisper hallucinates on sub-second clips; treat them as silence.
