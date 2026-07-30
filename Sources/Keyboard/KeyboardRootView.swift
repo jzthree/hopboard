@@ -9,16 +9,16 @@ struct KeyboardRootView: View {
             if model.typingMode {
                 TypePad(model: model)
             } else {
-                VStack(spacing: 6) {
+                VStack(spacing: 4) {
                     centerStage
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     keyRow
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 8)
+        .padding(.top, 3)
+        .padding(.bottom, 4)
         .tint(FlowBrand.accent)
     }
 
@@ -134,9 +134,12 @@ struct KeyboardRootView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
+                                .truncationMode(.tail)
                             Text("Loading runs only inside HopBoard — tap to open")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                         Spacer(minLength: 0)
                     }
@@ -144,7 +147,6 @@ struct KeyboardRootView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(KeyStyle())
-                endButton
             }
             .padding(.horizontal, 4)
 
@@ -187,7 +189,6 @@ struct KeyboardRootView: View {
                         }
                     }
                 }
-                endButton
             }
             .padding(.horizontal, 4)
 
@@ -227,7 +228,6 @@ struct KeyboardRootView: View {
                 }
                 .buttonStyle(KeyStyle())
                 .accessibilityLabel("Stop and transcribe")
-                endButton
             }
 
         case .transcribing:
@@ -238,7 +238,6 @@ struct KeyboardRootView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                endButton
             }
             .padding(.horizontal, 4)
         }
@@ -256,21 +255,6 @@ struct KeyboardRootView: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(KeyStyle())
-    }
-
-    /// End-session ✕ with a real 44 pt target.
-    private var endButton: some View {
-        Button {
-            model.endSessionTapped()
-        } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 44, height: 56)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(KeyStyle())
-        .accessibilityLabel("End Session")
     }
 
     /// The mic/stop circle — purely visual; its Button wrapper supplies
@@ -297,17 +281,41 @@ struct KeyboardRootView: View {
         HStack(spacing: 8) {
             if model.showsGlobe {
                 GlobeKey(controller: model.globeController)
-                    .frame(width: 44, height: 38)
+                    .frame(width: 44, height: 42)
                     .background(keyBackground)
             }
             key("space", flexible: true) { model.spaceTapped() }
             RepeatKey(systemName: "delete.left") { model.deleteTapped() }
                 .frame(maxWidth: .infinity)
-                .frame(height: 38)
+                .frame(height: 42)
                 .background(keyBackground)
             key("return", flexible: true) { model.returnTapped() }
+            if sessionActive { endKey }
         }
-        .frame(height: 38)
+        .frame(height: 42)
+    }
+
+    private var sessionActive: Bool {
+        switch model.state {
+        case .ready, .recording, .transcribing, .loading: true
+        default: false
+        }
+    }
+
+    /// End Session, demoted to the bottom corner: rare action, cheap seat.
+    private var endKey: some View {
+        Button {
+            model.endSessionTapped()
+        } label: {
+            Image(systemName: "xmark.circle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 40, height: 42)
+                .background(keyBackground)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyStyle())
+        .accessibilityLabel("End Session")
     }
 
     private var keyBackground: some View {
@@ -321,7 +329,7 @@ struct KeyboardRootView: View {
                 .font(.subheadline)
                 .frame(maxWidth: flexible ? .infinity : nil)
                 .padding(.horizontal, flexible ? 0 : 16)
-                .frame(height: 38)
+                .frame(height: 42)
                 .background(keyBackground)
         }
         .buttonStyle(KeyStyle())
