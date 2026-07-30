@@ -21,6 +21,7 @@ final class SessionManager: ObservableObject {
     private let bus = DarwinBus()
     private let recorder = AudioRecorder()
     private var transcriber: Transcriber?
+    private var gemma: GemmaEngine?
     private var heartbeatTimer: Timer?
     private var idleTimer: Timer?
     private var levelWriteGate = Date.distantPast
@@ -94,16 +95,32 @@ final class SessionManager: ObservableObject {
         // heartbeat made the keyboard flicker to "Start Session" mid-load.
         startHeartbeat()
 
-        let transcriber = self.transcriber ?? Transcriber { [weak self] modelState in
-            Task { @MainActor in self?.applyModelState(modelState) }
-        }
-        self.transcriber = transcriber
-        let model = UserDefaults.standard.string(forKey: Self.modelKey) == "accurate"
-            ? Transcriber.accurateModel : Transcriber.turboModel
-        await transcriber.load(model: model)
-        guard await transcriber.isReady else {
-            publish(.idle)
-            return
+        let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
+        if choice == "gemma" {
+            // Experimental audio-LLM path; Whisper's weights get freed.
+            if let transcriber { Task { await transcriber.unload() } }
+            let gemma = self.gemma ?? GemmaEngine { [weak self] modelState in
+                Task { @MainActor in self?.applyModelState(modelState) }
+            }
+            self.gemma = gemma
+            await gemma.load()
+            guard await gemma.isReady else {
+                publish(.idle)
+                return
+            }
+        } else {
+            if let gemma { Task { await gemma.unload() } }
+            let transcriber = self.transcriber ?? Transcriber { [weak self] modelState in
+                Task { @MainActor in self?.applyModelState(modelState) }
+            }
+            self.transcriber = transcriber
+            let model = choice == "accurate"
+                ? Transcriber.accurateModel : Transcriber.turboModel
+            await transcriber.load(model: model)
+            guard await transcriber.isReady else {
+                publish(.idle)
+                return
+            }
         }
 
         recorder.onLevel = { [weak self] level in
@@ -158,21 +175,28 @@ final class SessionManager: ObservableObject {
     private func enqueueWindow(_ window: [Float]) {
         guard state == .recording else { return }
         touchIdleTimer()   // a long monologue is activity, not idleness
-        let language = UserDefaults.standard.string(forKey: Self.languageKey)
-        let transcriber = self.transcriber
         let previous = windowChain
-        windowChain = Task {
+        windowChain = Task { [weak self] in
             let prefix = await previous?.value ?? ""
-            let text = (try? await transcriber?.transcribe(window, language: language)) ?? ""
+            let text = (try? await self?.transcribeSamples(window)) ?? ""
             return [prefix, text].filter { !$0.isEmpty }.joined(separator: " ")
         }
+    }
+
+    /// One entry point for every chunk of audio, routed to whichever
+    /// engine the session was started with.
+    private func transcribeSamples(_ samples: [Float]) async throws -> String {
+        let language = UserDefaults.standard.string(forKey: Self.languageKey)
+        if UserDefaults.standard.string(forKey: Self.modelKey) == "gemma", let gemma {
+            return try await gemma.transcribe(samples, language: language, tone: store.tone)
+        }
+        return try await transcriber?.transcribe(samples, language: language) ?? ""
     }
 
     func finishSegment() {
         guard state == .recording else { return }
         let tail = recorder.takeSegment()
         publish(.transcribing)
-        let language = UserDefaults.standard.string(forKey: Self.languageKey)
         let tone = store.tone
         let previous = windowChain
         windowChain = nil
@@ -180,7 +204,7 @@ final class SessionManager: ObservableObject {
             let prefix = await previous?.value ?? ""
             var tailText = ""
             do {
-                tailText = try await transcriber?.transcribe(tail, language: language) ?? ""
+                tailText = try await transcribeSamples(tail)
             } catch {
                 lastError = "Transcription failed: \(error.localizedDescription)"
             }

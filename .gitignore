@@ -6,3 +6,4 @@ Sources/App/Info.plist
 Sources/Keyboard/Info.plist
 HopBoard.entitlements
 HopBoardKeyboard.entitlements
+Vendor/

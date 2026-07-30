@@ -18,6 +18,10 @@ targets:
       - package: ArgmaxOSS
         product: WhisperKit
       - target: HopBoardKeyboard
+      # llama.cpp with libmtmd (audio) for the experimental Gemma 4 engine.
+      # 800 MB, NOT committed — scripts/fetch_llama.sh downloads it.
+      - framework: Vendor/llama.xcframework
+        embed: true
     info:
       # GENERATED from this block on every `make` — do not edit
       # Sources/App/Info.plist directly (same trap as hop-ios).

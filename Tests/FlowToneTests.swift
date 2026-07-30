@@ -30,3 +30,16 @@ final class FlowToneTests: XCTestCase {
         XCTAssertEqual(FlowTone.excited.apply(to: "太好了。"), "太好了！")
     }
 }
+
+final class GemmaOutputTests: XCTestCase {
+    func testStripThinking() {
+        XCTAssertEqual(GemmaEngine.stripThinking(
+            "<|channel>thought\nReasoning here.<channel|>hello world\n"),
+            "hello world")
+        XCTAssertEqual(GemmaEngine.stripThinking("plain answer<end_of_turn>"),
+                       "plain answer")
+        XCTAssertEqual(GemmaEngine.stripThinking(
+            "<|channel>thought a <channel|> mid <|channel>thought b <channel|>final"),
+            "final")
+    }
+}

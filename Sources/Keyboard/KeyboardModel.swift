@@ -1,5 +1,7 @@
 import Foundation
 import UIKit
+// NOTE: this file must never import llama — the keyboard extension links
+// neither WhisperKit nor llama.cpp; all inference lives in the app.
 
 @MainActor
 final class KeyboardModel: ObservableObject {

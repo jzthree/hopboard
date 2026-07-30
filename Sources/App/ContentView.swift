@@ -246,6 +246,13 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 .tag("accurate")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Gemma 4 (experimental)")
+                    Text("audio LLM · follows instructions: styled tone & punctuated Chinese · extra 4.1 GB, battery-hungrier")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .tag("gemma")
             }
             .pickerStyle(.navigationLink)
             .onChange(of: modelChoice) { _, _ in
