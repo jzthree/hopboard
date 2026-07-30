@@ -211,11 +211,38 @@ final class SessionManager: ObservableObject {
         windowChain = nil
         Task {
             let prefix = await previous?.value ?? ""
+            // Watchdog: engines (Gemma especially) can grind for minutes.
+            // After 90 s release the keyboard; if the engine eventually
+            // finishes, the text arrives as a late result — the keyboard
+            // offers it as an Insert pill instead of losing it.
+            let work = Task { [weak self] in
+                (try? await self?.transcribeSamples(tail)) ?? ""
+            }
+            let raced = await withTaskGroup(of: String?.self) { group in
+                group.addTask { await work.value }
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(90))
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
             var tailText = ""
-            do {
-                tailText = try await transcribeSamples(tail)
-            } catch {
-                lastError = "Transcription failed: \(error.localizedDescription)"
+            if let raced {
+                tailText = raced
+            } else {
+                lastError = "Transcription is taking unusually long — if it finishes, the text will appear on the keyboard as an Insert button."
+                Task { [weak self] in
+                    let late = await work.value
+                    guard let self, !late.isEmpty else { return }
+                    let result = FlowResult(id: UUID(),
+                                            text: tone.apply(to: FlowText.normalizeCJKPunctuation(late)),
+                                            finishedAt: Date().timeIntervalSince1970)
+                    self.store.append(result)
+                    self.transcripts = self.store.results
+                    self.bus.post(Flow.stateNotification)
+                }
             }
             let text = tone.apply(to: FlowText.normalizeCJKPunctuation(
                 [prefix, tailText].filter { !$0.isEmpty }.joined(separator: " ")))

@@ -171,9 +171,13 @@ actor GemmaEngine {
         llama_memory_clear(llama_get_memory(context), true)
 
         let marker = String(cString: mtmd_default_marker())
+        // The assistant turn is PREFILLED with an empty thought block —
+        // E2B otherwise generates ~150 reasoning tokens before the answer,
+        // which at mobile-GPU decode speed reads as a hang.
         let prompt = "<start_of_turn>user\n"
             + Self.instruction(language: language, tone: tone)
             + "\n" + marker + "<end_of_turn>\n<start_of_turn>model\n"
+            + "<|channel>thought\n\n<channel|>"
 
         guard let bitmap = samples.withUnsafeBufferPointer({
             mtmd_bitmap_init_from_audio(samples.count, $0.baseAddress)
@@ -217,7 +221,7 @@ actor GemmaEngine {
 
         var bytes: [UInt8] = []
         var pieceBuf = [CChar](repeating: 0, count: 256)
-        for _ in 0..<700 {
+        for _ in 0..<350 {
             var token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) { break }
             let n = llama_token_to_piece(vocab, token, &pieceBuf, 256, 0, true)

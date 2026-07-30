@@ -247,9 +247,16 @@ struct KeyboardRootView: View {
             HStack(spacing: 12) {
                 ProgressView()
                     .frame(width: 52, height: 52)
-                Text("Transcribing…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text("Transcribing")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let start = model.transcribingStartedAt {
+                        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 4)

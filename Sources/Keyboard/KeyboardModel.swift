@@ -34,6 +34,9 @@ final class KeyboardModel: ObservableObject {
     /// When the current recording started — drives the live timer that
     /// makes the recording state unmissable.
     @Published private(set) var recordingStartedAt: Date?
+    /// When transcribing began — a visible elapsed timer distinguishes
+    /// "slow" (Gemma grinding) from "stuck".
+    @Published private(set) var transcribingStartedAt: Date?
 
     private weak var controller: KeyboardViewController?
     /// The UIKit globe key needs the controller for handleInputModeList.
@@ -223,11 +226,21 @@ final class KeyboardModel: ObservableObject {
                     || (optimistic.state == .transcribing && truth == .recording))
             if bridgeValid {
                 state = optimistic.state
+                trackTranscribing()
                 return
             }
             self.optimistic = nil
         }
         state = truth
+        trackTranscribing()
+    }
+
+    private func trackTranscribing() {
+        if state == .transcribing {
+            if transcribingStartedAt == nil { transcribingStartedAt = Date() }
+        } else {
+            transcribingStartedAt = nil
+        }
     }
 
     private func consumeResultIfAny() {
