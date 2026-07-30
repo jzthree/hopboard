@@ -17,6 +17,9 @@ actor GemmaEngine {
     private var context: OpaquePointer?
     private var mtmd: OpaquePointer?
     private(set) var isReady = false
+    /// One line describing the last transcription attempt — surfaced in
+    /// the app when output is empty, so device failures are diagnosable.
+    private(set) var lastDiagnostic = "no attempt yet"
     private let onState: @Sendable (Transcriber.State) -> Void
 
     init(onState: @escaping @Sendable (Transcriber.State) -> Void) {
@@ -80,6 +83,9 @@ actor GemmaEngine {
         do {
             onState(.downloading(0))
             let files = try await ensureFiles()
+            let modelBytes = (try? FileManager.default.attributesOfItem(atPath: files.model.path)[.size] as? Int) ?? 0
+            let mmprojBytes = (try? FileManager.default.attributesOfItem(atPath: files.mmproj.path)[.size] as? Int) ?? 0
+            lastDiagnostic = "files: model=\(modelBytes ?? 0)B mmproj=\(mmprojBytes ?? 0)B"
             onState(.loading)
 
             llama_backend_init()
@@ -206,14 +212,17 @@ actor GemmaEngine {
             }
         }
         guard tokenizeResult == 0 else {
+            lastDiagnostic = "tokenize failed (\(tokenizeResult))"
             throw NSError(domain: "Gemma", code: 8,
                           userInfo: [NSLocalizedDescriptionKey: "Tokenize failed (\(tokenizeResult))"])
         }
 
         var nPast: llama_pos = 0
-        guard mtmd_helper_eval_chunks(mtmd, context, chunks, 0, 0, 1024, true, &nPast) == 0 else {
+        let evalResult = mtmd_helper_eval_chunks(mtmd, context, chunks, 0, 0, 1024, true, &nPast)
+        guard evalResult == 0 else {
+            lastDiagnostic = "audio eval failed (\(evalResult))"
             throw NSError(domain: "Gemma", code: 9,
-                          userInfo: [NSLocalizedDescriptionKey: "Audio evaluation failed"])
+                          userInfo: [NSLocalizedDescriptionKey: "Audio evaluation failed (\(evalResult))"])
         }
 
         let vocab = llama_model_get_vocab(model)
@@ -238,7 +247,10 @@ actor GemmaEngine {
             guard llama_decode(context, batch) == 0 else { break }
         }
 
-        return Self.stripThinking(String(decoding: bytes, as: UTF8.self))
+        let raw = String(decoding: bytes, as: UTF8.self)
+        let stripped = Self.stripThinking(raw)
+        lastDiagnostic = "n_past=\(nPast), generated \(bytes.count) bytes, raw='\(raw.prefix(120))'"
+        return stripped
     }
 
     /// E2B emits "<|channel>thought …reasoning… <channel|>answer" — keep

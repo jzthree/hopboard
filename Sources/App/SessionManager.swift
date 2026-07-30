@@ -197,7 +197,13 @@ final class SessionManager: ObservableObject {
     private func transcribeSamples(_ samples: [Float]) async throws -> String {
         let language = UserDefaults.standard.string(forKey: Self.languageKey)
         if UserDefaults.standard.string(forKey: Self.modelKey) == "gemma", let gemma {
-            return try await gemma.transcribe(samples, language: language, tone: store.tone)
+            let text = try await gemma.transcribe(samples, language: language, tone: store.tone)
+            if text.isEmpty, samples.count > 16000 {
+                // A second of real audio should never transcribe to nothing
+                // — surface what the engine actually did.
+                lastError = "Gemma returned nothing — \(await gemma.lastDiagnostic)"
+            }
+            return text
         }
         return try await transcriber?.transcribe(samples, language: language) ?? ""
     }
@@ -215,8 +221,17 @@ final class SessionManager: ObservableObject {
             // After 90 s release the keyboard; if the engine eventually
             // finishes, the text arrives as a late result — the keyboard
             // offers it as an Insert pill instead of losing it.
-            let work = Task { [weak self] in
-                (try? await self?.transcribeSamples(tail)) ?? ""
+            // Errors must surface, not vanish into try? — a throwing engine
+            // looked identical to silence from the keyboard.
+            let work = Task { [weak self] () -> String in
+                do {
+                    return try await self?.transcribeSamples(tail) ?? ""
+                } catch {
+                    await MainActor.run { [weak self] in
+                        self?.lastError = "Transcription failed: \(error.localizedDescription)"
+                    }
+                    return ""
+                }
             }
             let raced = await withTaskGroup(of: String?.self) { group in
                 group.addTask { await work.value }
