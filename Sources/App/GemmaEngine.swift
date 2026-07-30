@@ -90,7 +90,12 @@ actor GemmaEngine {
 
             llama_backend_init()
             var modelParams = llama_model_default_params()
-            modelParams.n_gpu_layers = 99
+            // CPU-ONLY, deliberately: keyboard dictations run while the app
+            // is BACKGROUNDED, and iOS rejects GPU work from backgrounded
+            // apps (Metal command buffers fail → eval -3 → empty text).
+            // Whisper is immune because the ANE is background-allowed. CPU
+            // decode of E2B Q4 is slower but works everywhere.
+            modelParams.n_gpu_layers = 0
             guard let model = llama_model_load_from_file(files.model.path, modelParams) else {
                 throw NSError(domain: "Gemma", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "Gemma weights failed to load"])
@@ -99,6 +104,8 @@ actor GemmaEngine {
 
             var ctxParams = llama_context_default_params()
             ctxParams.n_ctx = 4096
+            ctxParams.n_threads = 6
+            ctxParams.n_threads_batch = 6
             // Long audio overflows a small batch: ~30s of audio tokens blew
             // past 1024 and mtmd eval failed with -3 on device. Segments are
             // also capped at 12s for this engine (SessionManager).
@@ -110,7 +117,7 @@ actor GemmaEngine {
             self.context = context
 
             var mtmdParams = mtmd_context_params_default()
-            mtmdParams.use_gpu = true
+            mtmdParams.use_gpu = false
             mtmdParams.print_timings = false
             mtmdParams.n_threads = 4
             mtmdParams.batch_max_tokens = 2048
