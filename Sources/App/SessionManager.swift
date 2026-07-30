@@ -41,6 +41,15 @@ final class SessionManager: ObservableObject {
     static let languageKey = "flow.language"
     static let modelKey = "flow.model"
 
+    /// Human name + size of the currently selected model, for download UI.
+    static func selectedModelDescription() -> String {
+        switch UserDefaults.standard.string(forKey: modelKey) {
+        case "accurate": "large-v3 (950 MB)"
+        case "gemma": "Gemma 4 (4.1 GB)"
+        default: "large-v3-turbo (626 MB)"
+        }
+    }
+
     init() {
         transcripts = store.results
         tone = store.tone
@@ -268,7 +277,7 @@ final class SessionManager: ObservableObject {
         case .unloaded:
             store.modelStatus = ""
         case .downloading(let fraction):
-            store.modelStatus = "Downloading model \(Int(fraction * 100))%…"
+            store.modelStatus = "Downloading \(Self.selectedModelDescription()) \(Int(fraction * 100))%…"
         case .loading:
             store.modelStatus = "Loading model…"
         case .ready:

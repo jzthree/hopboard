@@ -114,7 +114,7 @@ struct ContentView: View {
             switch session.modelState {
             case .downloading(let fraction):
                 ProgressView(value: fraction) {
-                    Text("Downloading large-v3-turbo (626 MB, one time)")
+                    Text("Downloading \(SessionManager.selectedModelDescription()) — one time per model")
                         .font(.callout)
                 }
                 .progressViewStyle(.linear)
