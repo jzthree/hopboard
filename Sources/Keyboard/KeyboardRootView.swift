@@ -17,8 +17,6 @@ struct KeyboardRootView: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.top, 3)
-        .padding(.bottom, 4)
         .tint(FlowBrand.accent)
     }
 
@@ -176,15 +174,30 @@ struct KeyboardRootView: View {
                         .padding(.horizontal, 12)
                         .frame(height: 38)
                         .glassPill(tint: .green)
+                } else if let pending = model.pendingResult {
+                    // A dictation that couldn't auto-insert: lingers until
+                    // tapped or a new dictation replaces it.
+                    Button {
+                        model.insertPending()
+                    } label: {
+                        Label("Insert \u{201C}\(pending.text.prefix(10))…\u{201D}",
+                              systemImage: "arrow.down.circle.fill")
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                            .padding(.horizontal, 12)
+                            .frame(height: 38)
+                            .glassPill(tint: FlowBrand.accent)
+                    }
+                    .buttonStyle(KeyStyle())
                 } else {
-                    chip("abc", icon: "keyboard") {
+                    iconChip("keyboard", label: "Type") {
                         model.setTyping(true)
                     }
                     chip(model.tone.shortLabel, icon: "wand.and.stars") {
                         model.cycleTone()
                     }
                     if !model.historyItems.isEmpty {
-                        chip("History", icon: "clock.arrow.circlepath") {
+                        iconChip("clock.arrow.circlepath", label: "History") {
                             model.showingHistory = true
                         }
                     }
@@ -241,6 +254,19 @@ struct KeyboardRootView: View {
             }
             .padding(.horizontal, 4)
         }
+    }
+
+    /// Icon-only chip (Type, History): 44×38, frees width for the mic zone.
+    private func iconChip(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .frame(width: 44, height: 38)
+                .glassPill()
+                .contentShape(Capsule())
+        }
+        .buttonStyle(KeyStyle())
+        .accessibilityLabel(label)
     }
 
     /// Pill control for the ready row (abc, tone, History): 38 pt tall so

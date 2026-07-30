@@ -22,6 +22,10 @@ final class KeyboardModel: ObservableObject {
     /// dismissed mid-transcribe) is recoverable with a preview.
     @Published private(set) var historyItems: [FlowResult] = []
     @Published var showingHistory = false
+    /// A finished dictation that could NOT be auto-inserted (keyboard was
+    /// away, wait timed out, or it came from the app). Lingers as an
+    /// "Insert" pill until tapped or superseded — never silently eaten.
+    @Published private(set) var pendingResult: FlowResult?
     /// The correction pad: a minimal QWERTY for typing "yes" instead of
     /// dictating it. Temporary by design — no autocorrect, no prose.
     @Published private(set) var typingMode = false
@@ -101,6 +105,11 @@ final class KeyboardModel: ObservableObject {
     func micTapped() {
         switch state {
         case .ready:
+            // Starting a new dictation supersedes an unclaimed old one.
+            if let pending = pendingResult {
+                store.lastConsumedResultID = pending.id
+                pendingResult = nil
+            }
             send(.startSegment)
             optimistic = (.recording, Date())
             state = .recording
@@ -166,19 +175,22 @@ final class KeyboardModel: ObservableObject {
             state = .needsFullAccess
             return
         }
-        // Escape hatches for a stranded spinner: if the app is back to
-        // ready and nothing arrived for us within 10 s — or 45 s outright —
-        // stop waiting. The command queue makes this rare; this makes it
-        // survivable.
+        tone = store.tone
+        historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
+        // Consume BEFORE the escape hatches: a slow transcription (>10 s —
+        // routine right after an install while the ANE cache rebuilds) used
+        // to hit the escape and the consume in the same tick, clearing the
+        // waiting marker first and swallowing the result into history.
+        consumeResultIfAny()
+        // Escape hatches for a stranded wait: if the app is back to ready
+        // with nothing for us within 10 s — or 45 s outright — stop waiting.
         if let since = awaitingResultSince {
             let waited = Date().timeIntervalSince(since)
             if waited > 45 || (store.state == .ready && waited > 10) {
                 awaitingResultSince = nil
             }
         }
-        tone = store.tone
-        historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
-        consumeResultIfAny()
+        updatePendingResult()
         if store.state == .recording {
             if recordingStartedAt == nil { recordingStartedAt = Date() }
         } else {
@@ -217,11 +229,13 @@ final class KeyboardModel: ObservableObject {
     }
 
     private func consumeResultIfAny() {
-        guard let result = store.nextUnconsumedResult() else { return }
-        store.lastConsumedResultID = result.id
-
+        // Only ever claim a result while we're actually waiting for one —
+        // marking results consumed while not waiting is how dictations got
+        // silently eaten. Results we didn't ask for just sit in history.
         guard let since = awaitingResultSince,
-              result.finishedAt >= since.timeIntervalSince1970 - 1 else { return }
+              let result = store.nextUnconsumedResult() else { return }
+        store.lastConsumedResultID = result.id
+        guard result.finishedAt >= since.timeIntervalSince1970 - 1 else { return }
         awaitingResultSince = nil
 
         guard !result.text.isEmpty else { return }
@@ -231,8 +245,29 @@ final class KeyboardModel: ObservableObject {
         flashInserted()
     }
 
+    /// The Insert pill's tap: insert at the cursor and retire the result.
+    func insertPending() {
+        guard let pending = pendingResult else { return }
+        store.lastConsumedResultID = pending.id
+        pendingResult = nil
+        controller?.insert(FlowText.smartJoin(before: controller?.textBeforeCursor,
+                                              insertion: pending.text))
+        flashInserted()
+    }
+
+    private func updatePendingResult() {
+        guard awaitingResultSince == nil,
+              let last = store.results.last, !last.text.isEmpty,
+              last.id != store.lastConsumedResultID else {
+            if pendingResult != nil { pendingResult = nil }
+            return
+        }
+        pendingResult = last
+    }
+
     private func flashInserted() {
         justInserted = true
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
             self?.justInserted = false
         }
