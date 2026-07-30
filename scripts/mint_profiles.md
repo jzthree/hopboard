@@ -34,8 +34,11 @@ browser login. Development profiles for this team carry
 the keychain group `5AD7QB9795.io.zhoulab.flowboard.ipc` and share state
 through keychain items (see `Sources/Shared/FlowIPC.swift`).
 
-If FlowBoard ever goes to TestFlight/App Store: distribution profiles do
-NOT carry the `TEAMID.*` wildcard automatically — at that point register a
-real App Group in the portal (one browser step), switch `FlowIPC.swift`
-back to an `UserDefaults(suiteName:)` backend, and add the entitlement to
-both targets in `project.yml`.
+TestFlight/App Store: measured 2026-07-29 — IOS_APP_STORE profiles DO
+carry `keychain-access-groups: 5AD7QB9795.*` (an earlier note here
+claimed otherwise; wrong), so the keychain IPC ships unchanged. Mint the
+distribution profiles with `scripts/mint_dist_profiles.py`; the pipeline
+is `make testflight` (archive → manual re-sign via
+AppStore/ExportOptions.plist → upload → scripts/testflight.py release).
+The ONE thing the ASC API cannot do is create the App Store Connect app
+record — that's a browser step.

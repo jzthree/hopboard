@@ -57,3 +57,21 @@ shot:
 
 clean:
 	rm -rf build build-sim $(PROJECT)
+
+# TestFlight: archive (dev-signed) then export re-signs with the ASC-minted
+# "FlowBoard AppStore" profiles and uploads. Needs the app record to exist
+# in App Store Connect (browser, once). Profiles: scripts/mint_dist_profiles.py.
+ASC_KEY = $(HOME)/.appstoreconnect/private_keys/AuthKey_CCFL4WD4V4.p8
+ASC_AUTH = -authenticationKeyPath $(ASC_KEY) -authenticationKeyID CCFL4WD4V4 \
+           -authenticationKeyIssuerID 254072af-7f14-4065-acd8-d09fe4924553
+
+archive: gen
+	xcodebuild archive -project $(PROJECT) -scheme $(SCHEME) \
+	  -destination 'generic/platform=iOS' \
+	  -archivePath build/FlowBoard.xcarchive $(VERSION_FLAGS)
+
+testflight: archive
+	xcodebuild -exportArchive -archivePath build/FlowBoard.xcarchive \
+	  -exportOptionsPlist AppStore/ExportOptions.plist -exportPath build/export \
+	  $(ASC_AUTH)
+	uv run scripts/testflight.py release
