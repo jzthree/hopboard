@@ -4,10 +4,29 @@ import UIKit
 /// The keyboard is deliberately dumb: it cannot record (iOS forbids the mic
 /// to every keyboard extension), so it renders session state from the App
 /// Group, sends commands to the app, and inserts whatever text comes back.
+/// System keyboard clicks require the input view itself to opt in.
+final class ClickingInputView: UIInputView, UIInputViewAudioFeedback {
+    var enableInputClicksWhenVisible: Bool { true }
+}
+
+/// One tap's worth of feedback, Apple-keyboard style: a light haptic plus
+/// the system key click (which respects the user's Sounds settings).
+enum KeyFeedback {
+    private static let impact = UIImpactFeedbackGenerator(style: .light)
+    static func tap() {
+        impact.impactOccurred()
+        UIDevice.current.playInputClick()
+    }
+}
+
 final class KeyboardViewController: UIInputViewController {
     private var model: KeyboardModel!
     private var host: UIHostingController<KeyboardRootView>!
     private var heightConstraint: NSLayoutConstraint?
+
+    override func loadView() {
+        view = ClickingInputView(frame: .zero, inputViewStyle: .keyboard)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()

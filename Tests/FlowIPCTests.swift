@@ -30,16 +30,28 @@ final class FlowIPCTests: XCTestCase {
 
     func testResultConsumption() {
         XCTAssertNil(store.nextUnconsumedResult())
-        let result = FlowResult(id: UUID(), text: "hello world", finishedAt: 123)
+        let result = FlowResult(id: UUID(), text: "hello world",
+                                finishedAt: Date().timeIntervalSince1970)
         store.append(result)
         XCTAssertEqual(store.nextUnconsumedResult(), result)
         store.lastConsumedResultID = result.id
         XCTAssertNil(store.nextUnconsumedResult())
     }
 
+    func testResultsExpireAfterADay() {
+        let old = FlowResult(id: UUID(), text: "yesterday",
+                             finishedAt: Date().timeIntervalSince1970 - 25 * 3600)
+        let fresh = FlowResult(id: UUID(), text: "now",
+                               finishedAt: Date().timeIntervalSince1970)
+        store.append(old)
+        store.append(fresh)
+        XCTAssertEqual(store.results.map(\.text), ["now"])
+    }
+
     func testResultsAreCapped() {
+        let now = Date().timeIntervalSince1970
         for i in 0..<30 {
-            store.append(FlowResult(id: UUID(), text: "\(i)", finishedAt: Double(i)))
+            store.append(FlowResult(id: UUID(), text: "\(i)", finishedAt: now + Double(i)))
         }
         XCTAssertEqual(store.results.count, 20)
         XCTAssertEqual(store.results.last?.text, "29")

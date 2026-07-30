@@ -39,15 +39,17 @@ struct KeyboardRootView: View {
             Button {
                 model.showingHistory = false
             } label: {
+                // A visible key, not a floating glyph: the drawn bounds ARE
+                // the tap target, so the finger knows exactly where to land.
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    // Full-height 44 pt target; contentShape makes the whole
-                    // frame tappable, not just the glyph.
-                    .frame(width: 44, height: 64)
+                    .foregroundStyle(.primary)
+                    .frame(width: 52, height: 72)
+                    .background(RoundedRectangle(cornerRadius: 9)
+                        .fill(Color(.secondarySystemFill)))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(KeyStyle())
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(model.historyItems) { result in
@@ -63,7 +65,7 @@ struct KeyboardRootView: View {
                                 .background(RoundedRectangle(cornerRadius: 8)
                                     .fill(Color(.secondarySystemFill)))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(KeyStyle())
                     }
                 }
             }
@@ -102,7 +104,7 @@ struct KeyboardRootView: View {
                         .background(Capsule().fill(.tint))
                         .foregroundStyle(.white)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(KeyStyle())
                 if model.historyItems.isEmpty {
                     Text("Opens HopBoard, then swipe back here.")
                         .font(.caption2)
@@ -207,7 +209,7 @@ struct KeyboardRootView: View {
                 .padding(.vertical, 7)
                 .glassPill()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyStyle())
     }
 
     private var endButton: some View {
@@ -237,7 +239,7 @@ struct KeyboardRootView: View {
                     .foregroundStyle(.white)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyStyle())
         .accessibilityLabel(recording ? "Stop and transcribe" : "Start dictating")
     }
 
@@ -276,7 +278,20 @@ struct KeyboardRootView: View {
                 .frame(height: 38)
                 .background(keyBackground)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyStyle())
+    }
+}
+
+/// Every key's press feel: dim + slight shrink while pressed, one haptic
+/// and system click on touch-down — the physicality the plain style lacked.
+struct KeyStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.5 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed { KeyFeedback.tap() }
+            }
     }
 }
 
@@ -286,43 +301,65 @@ struct KeyboardRootView: View {
 struct TypePad: View {
     @ObservedObject var model: KeyboardModel
     @State private var shifted = false
-    @State private var symbols = false
+
+    /// Three layers, like the system keyboard: letters, 123, #+=.
+    private enum Layer { case letters, numbers, symbols }
+    @State private var layer: Layer = .letters
 
     private static let row1 = ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]
     private static let row2 = ["a", "s", "d", "f", "g", "h", "j", "k", "l"]
     private static let row3 = ["z", "x", "c", "v", "b", "n", "m"]
-    private static let sym1 = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
-    private static let sym2 = ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]
-    private static let sym3 = [".", ",", "?", "!", "'"]
+    private static let num1 = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    private static let num2 = ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]
+    private static let sym1 = ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="]
+    private static let sym2 = ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"]
+    private static let punct = [".", ",", "?", "!", "'"]
 
     var body: some View {
         VStack(spacing: 8) {
-            letterRow(symbols ? Self.sym1 : Self.row1)
-            letterRow(symbols ? Self.sym2 : Self.row2)
-                .padding(.horizontal, symbols ? 0 : 14)
+            switch layer {
+            case .letters: letterRow(Self.row1)
+            case .numbers: letterRow(Self.num1)
+            case .symbols: letterRow(Self.sym1)
+            }
+            switch layer {
+            case .letters: letterRow(Self.row2).padding(.horizontal, 14)
+            case .numbers: letterRow(Self.num2)
+            case .symbols: letterRow(Self.sym2)
+            }
             HStack(spacing: 6) {
-                if symbols {
-                    Spacer().frame(width: 40)
-                } else {
+                if layer == .letters {
                     controlKey(shifted ? "shift.fill" : "shift") { shifted.toggle() }
+                } else {
+                    // The second-symbols toggle lives where shift was —
+                    // exactly the system keyboard's arrangement.
+                    Button {
+                        layer = layer == .numbers ? .symbols : .numbers
+                    } label: {
+                        Text(layer == .numbers ? "#+=" : "123")
+                            .font(.footnote)
+                            .frame(width: 40, height: 40)
+                            .background(padKeyBackground)
+                    }
+                    .buttonStyle(KeyStyle())
                 }
-                letterRow(symbols ? Self.sym3 : Self.row3)
-                    .padding(.horizontal, symbols ? 24 : 0)
+                letterRow(layer == .letters ? Self.row3 : Self.punct)
+                    .padding(.horizontal, layer == .letters ? 0 : 24)
                 RepeatKey(systemName: "delete.left") { model.deleteTapped() }
                     .frame(width: 40, height: 40)
                     .background(padKeyBackground)
             }
             HStack(spacing: 6) {
                 Button {
-                    symbols.toggle()
+                    layer = layer == .letters ? .numbers : .letters
                     shifted = false
                 } label: {
-                    Text(symbols ? "abc" : "123")
+                    Text(layer == .letters ? "123" : "abc")
                         .font(.subheadline)
                         .frame(width: 46, height: 40)
                         .background(padKeyBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(KeyStyle())
                 Button {
                     model.setTyping(false)
                 } label: {
@@ -332,7 +369,7 @@ struct TypePad: View {
                         .frame(width: 46, height: 40)
                         .background(RoundedRectangle(cornerRadius: 7).fill(FlowBrand.accent))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(KeyStyle())
                 .accessibilityLabel("Back to dictation")
                 key("space") { model.spaceTapped() }
                 key("return") { model.returnTapped() }
@@ -354,7 +391,7 @@ struct TypePad: View {
                         .frame(height: 40)
                         .background(padKeyBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(KeyStyle())
             }
         }
     }
@@ -366,7 +403,7 @@ struct TypePad: View {
                 .frame(width: 40, height: 40)
                 .background(padKeyBackground)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyStyle())
     }
 
     private func key(_ label: String, action: @escaping () -> Void) -> some View {
@@ -377,7 +414,7 @@ struct TypePad: View {
                 .frame(height: 40)
                 .background(padKeyBackground)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyStyle())
     }
 
     private var padKeyBackground: some View {
@@ -427,9 +464,11 @@ struct RepeatKey: View {
                     .onChanged { _ in
                         guard !pressed else { return }
                         pressed = true
+                        KeyFeedback.tap()
                         action()
                         repeater = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
                             repeater = Timer.scheduledTimer(withTimeInterval: 0.09, repeats: true) { _ in
+                                KeyFeedback.tap()
                                 action()
                             }
                         }

@@ -216,11 +216,15 @@ final class FlowStore {
 
     // MARK: results (app writes, keyboard consumes)
 
+    /// Dictations are ephemeral: at most 20 kept, nothing older than 24 h.
+    static let resultMaxAge: TimeInterval = 24 * 3600
+
     private(set) var results: [FlowResult] {
         get {
             guard let data = backend.data(forKey: Key.results),
                   let results = try? decoder.decode([FlowResult].self, from: data) else { return [] }
-            return results
+            let cutoff = Date().timeIntervalSince1970 - Self.resultMaxAge
+            return results.filter { $0.finishedAt > cutoff }
         }
         set {
             if let data = try? encoder.encode(newValue.suffix(20)) {
