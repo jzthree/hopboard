@@ -256,6 +256,15 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 .tag("accurate")
+                if #available(iOS 26.0, *) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Apple (iOS 26)")
+                        Text("the system transcriber behind Notes & Voice Memos · fast, punctuates incl. Chinese · no app download")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .tag("apple")
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Gemma 4 (experimental)")
                     Text("audio LLM · follows instructions: styled tone & punctuated Chinese · extra 4.1 GB, battery-hungrier")
@@ -330,7 +339,7 @@ struct ContentView: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
         }
     }
 

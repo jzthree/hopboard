@@ -28,6 +28,14 @@ final class SessionManager: ObservableObject {
     private var transcriber: Transcriber?
     private var gemma: GemmaEngine?
     private var litert: LiteRTEngine?
+    /// Availability-erased storage: a stored property can't be typed with
+    /// an @available(iOS 26) class while the target deploys to 17.
+    private var appleBox: AnyObject?
+    @available(iOS 26.0, *)
+    private var apple: AppleSpeechEngine? {
+        get { appleBox as? AppleSpeechEngine }
+        set { appleBox = newValue }
+    }
     private var heartbeatTimer: Timer?
     private var idleTimer: Timer?
     private var levelWriteGate = Date.distantPast
@@ -84,6 +92,7 @@ final class SessionManager: ObservableObject {
         case "gemma": "Gemma 4 (4.1 GB)"
         case "litert": litertVariant() == "e4b"
             ? "Gemma 4 E4B LiteRT (3.7 GB)" : "Gemma 4 E2B LiteRT (2.6 GB)"
+        case "apple": "Apple's speech model (system download)"
         default: "large-v3-turbo (626 MB)"
         }
     }
@@ -110,6 +119,7 @@ final class SessionManager: ObservableObject {
                 Task { await transcriber?.unload() }
                 Task { await gemma?.unload() }
                 Task { await litert?.unload() }
+                self.unloadAppleEngine()
             }
         }
     }
@@ -154,6 +164,7 @@ final class SessionManager: ObservableObject {
             // freed — one resident model at a time.
             if let transcriber { Task { await transcriber.unload() } }
             if let litert { Task { await litert.unload() } }
+            unloadAppleEngine()
             let gemma = self.gemma ?? GemmaEngine { [weak self] modelState in
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
@@ -165,9 +176,30 @@ final class SessionManager: ObservableObject {
                 publish(.idle)
                 return
             }
+        } else if choice == "apple" {
+            guard #available(iOS 26.0, *) else {
+                lastError = "Apple's transcriber needs iOS 26."
+                publish(.idle)
+                return
+            }
+            if let transcriber { Task { await transcriber.unload() } }
+            if let gemma { Task { await gemma.unload() } }
+            if let litert { Task { await litert.unload() } }
+            let apple = self.apple ?? AppleSpeechEngine { [weak self] modelState in
+                Task { @MainActor in self?.applyModelState(modelState) }
+            }
+            self.apple = apple
+            apple.abortFlag.set(false)
+            await apple.load(language: UserDefaults.standard.string(forKey: Self.languageKey))
+            guard epoch == sessionEpoch else { return }
+            guard await apple.isReady else {
+                publish(.idle)
+                return
+            }
         } else if choice == "litert" {
             if let transcriber { Task { await transcriber.unload() } }
             if let gemma { Task { await gemma.unload() } }
+            unloadAppleEngine()
             let litert = self.litert ?? LiteRTEngine { [weak self] modelState in
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
@@ -182,6 +214,7 @@ final class SessionManager: ObservableObject {
         } else {
             if let gemma { Task { await gemma.unload() } }
             if let litert { Task { await litert.unload() } }
+            unloadAppleEngine()
             let transcriber = self.transcriber ?? Transcriber { [weak self] modelState in
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
@@ -231,6 +264,7 @@ final class SessionManager: ObservableObject {
         sessionEpoch += 1
         gemma?.abortFlag.set(true)
         litert?.abort()
+        if #available(iOS 26.0, *) { apple?.abortFlag.set(true) }
         recorder.stop()
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
@@ -298,6 +332,13 @@ final class SessionManager: ObservableObject {
                 lastError = "LiteRT returned nothing — \(litert.diag.get())"
             }
             return text
+        case "apple":
+            guard #available(iOS 26.0, *), let apple else { return "" }
+            let text = try await apple.transcribe(samples, language: language)
+            if text.isEmpty, samples.count > 16000 {
+                lastError = "Apple engine returned nothing — \(apple.diag.get())"
+            }
+            return text
         default:
             return try await transcriber?.transcribe(samples, language: language) ?? ""
         }
@@ -308,7 +349,16 @@ final class SessionManager: ObservableObject {
         switch UserDefaults.standard.string(forKey: Self.modelKey) {
         case "gemma": gemma?.diag.get() ?? "gemma engine"
         case "litert": litert?.diag.get() ?? "litert engine"
+        case "apple":
+            if #available(iOS 26.0, *) { apple?.diag.get() ?? "apple engine" }
+            else { "apple engine" }
         default: "whisper engine"
+        }
+    }
+
+    private func unloadAppleEngine() {
+        if #available(iOS 26.0, *), let apple {
+            Task { await apple.unload() }
         }
     }
 
@@ -453,7 +503,7 @@ final class SessionManager: ObservableObject {
             store.modelStatus = "Downloading \(Self.selectedModelDescription()) \(Int(fraction * 100))%…"
         case .loading:
             let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
-            if choice == "gemma" || choice == "litert" {
+            if choice == "gemma" || choice == "litert" || choice == "apple" {
                 loadingLabel = "Loading model"
             } else {
                 let model = choice == "accurate" ? Transcriber.accurateModel : Transcriber.turboModel

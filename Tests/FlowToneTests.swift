@@ -57,6 +57,17 @@ final class GemmaOutputTests: XCTestCase {
     }
 }
 
+final class AppleSpeechEngineTests: XCTestCase {
+    @available(iOS 26.0, *)
+    func testLocaleMapping() {
+        XCTAssertEqual(AppleSpeechEngine.locale(for: "zh").identifier, "zh_CN")
+        XCTAssertEqual(AppleSpeechEngine.locale(for: "en").identifier, "en_US")
+        XCTAssertEqual(AppleSpeechEngine.locale(for: "ja").identifier, "ja")
+        XCTAssertEqual(AppleSpeechEngine.locale(for: "auto"), Locale.current)
+        XCTAssertEqual(AppleSpeechEngine.locale(for: nil), Locale.current)
+    }
+}
+
 final class LiteRTEngineTests: XCTestCase {
     func testWavData() {
         let wav = LiteRTEngine.wavData(from: [0, 0.5, -0.5, 1.5])
