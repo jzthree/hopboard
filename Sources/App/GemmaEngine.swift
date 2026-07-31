@@ -126,9 +126,11 @@ actor GemmaEngine {
             ctxParams.n_ctx = 4096
             ctxParams.n_threads = 6
             ctxParams.n_threads_batch = 6
-            // Long audio overflows a small batch: ~30s of audio tokens blew
-            // past 1024 and mtmd eval failed with -3 on device. Segments are
-            // also capped at 12s for this engine (SessionManager).
+            // Headroom, not a hard requirement: audio is ~25 tok/s and the
+            // mtmd helper splits eval across batches itself (34 s passed at
+            // 1024 on the Mac harness). The device -3 once blamed on batch
+            // overflow was the background-Metal failure. 2048 keeps any
+            // window we'd realistically feed in one comfortable batch.
             ctxParams.n_batch = 2048
             guard let context = llama_init_from_model(model, ctxParams) else {
                 throw NSError(domain: "Gemma", code: 2,

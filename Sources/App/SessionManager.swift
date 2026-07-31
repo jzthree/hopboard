@@ -167,8 +167,13 @@ final class SessionManager: ObservableObject {
         recorder.onWindow = { [weak self] window in
             Task { @MainActor in self?.enqueueWindow(window) }
         }
-        // Gemma's audio encoder hits device batch limits past ~25 s of
-        // audio — feed it shorter windows; Whisper keeps its native 30 s.
+        // Gemma's 12 s window is a latency/memory choice, NOT a batch limit:
+        // audio tokenizes at ~25 tok/s (34 s = ~850 tokens, evals fine even
+        // at n_batch 1024 on the Mac harness — the old device -3 was the
+        // background-Metal failure, misread as overflow). Shorter windows
+        // bound the post-stop tail and keep CPU bursts small while
+        // backgrounded; n_ctx 4096 could take ~2 min per call if we ever
+        // want fewer seams. Whisper keeps its native 30 s.
         recorder.windowSeconds = choice == "gemma" ? 12 : 30
         do {
             try recorder.start()
