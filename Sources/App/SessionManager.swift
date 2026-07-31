@@ -27,6 +27,7 @@ final class SessionManager: ObservableObject {
     private let recorder = AudioRecorder()
     private var transcriber: Transcriber?
     private var gemma: GemmaEngine?
+    private var litert: LiteRTEngine?
     private var heartbeatTimer: Timer?
     private var idleTimer: Timer?
     private var levelWriteGate = Date.distantPast
@@ -76,6 +77,7 @@ final class SessionManager: ObservableObject {
         switch UserDefaults.standard.string(forKey: modelKey) {
         case "accurate": "large-v3 (950 MB)"
         case "gemma": "Gemma 4 (4.1 GB)"
+        case "litert": "Gemma 4 LiteRT (2.6 GB)"
         default: "large-v3-turbo (626 MB)"
         }
     }
@@ -97,7 +99,11 @@ final class SessionManager: ObservableObject {
             Task { @MainActor in
                 guard let self, self.state == .idle else { return }
                 let transcriber = self.transcriber
+                let gemma = self.gemma
+                let litert = self.litert
                 Task { await transcriber?.unload() }
+                Task { await gemma?.unload() }
+                Task { await litert?.unload() }
             }
         }
     }
@@ -138,8 +144,10 @@ final class SessionManager: ObservableObject {
 
         let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
         if choice == "gemma" {
-            // Experimental audio-LLM path; Whisper's weights get freed.
+            // Experimental audio-LLM path; the other engines' weights are
+            // freed — one resident model at a time.
             if let transcriber { Task { await transcriber.unload() } }
+            if let litert { Task { await litert.unload() } }
             let gemma = self.gemma ?? GemmaEngine { [weak self] modelState in
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
@@ -151,8 +159,23 @@ final class SessionManager: ObservableObject {
                 publish(.idle)
                 return
             }
+        } else if choice == "litert" {
+            if let transcriber { Task { await transcriber.unload() } }
+            if let gemma { Task { await gemma.unload() } }
+            let litert = self.litert ?? LiteRTEngine { [weak self] modelState in
+                Task { @MainActor in self?.applyModelState(modelState) }
+            }
+            self.litert = litert
+            litert.abortFlag.set(false)
+            await litert.load()
+            guard epoch == sessionEpoch else { return }
+            guard await litert.isReady else {
+                publish(.idle)
+                return
+            }
         } else {
             if let gemma { Task { await gemma.unload() } }
+            if let litert { Task { await litert.unload() } }
             let transcriber = self.transcriber ?? Transcriber { [weak self] modelState in
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
@@ -183,7 +206,7 @@ final class SessionManager: ObservableObject {
         // bound the post-stop tail and keep CPU bursts small while
         // backgrounded; n_ctx 4096 could take ~2 min per call if we ever
         // want fewer seams. Whisper keeps its native 30 s.
-        recorder.windowSeconds = choice == "gemma" ? 12 : 30
+        recorder.windowSeconds = choice == "gemma" || choice == "litert" ? 12 : 30
         do {
             try recorder.start()
         } catch {
@@ -201,6 +224,7 @@ final class SessionManager: ObservableObject {
         guard state != .idle else { return }
         sessionEpoch += 1
         gemma?.abortFlag.set(true)
+        litert?.abort()
         recorder.stop()
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
@@ -245,7 +269,9 @@ final class SessionManager: ObservableObject {
     /// engine the session was started with.
     private func transcribeSamples(_ samples: [Float]) async throws -> String {
         let language = UserDefaults.standard.string(forKey: Self.languageKey)
-        if UserDefaults.standard.string(forKey: Self.modelKey) == "gemma", let gemma {
+        switch UserDefaults.standard.string(forKey: Self.modelKey) {
+        case "gemma" where gemma != nil:
+            let gemma = gemma!
             let text = try await gemma.transcribe(
                 samples, language: language, tone: store.tone,
                 thinking: UserDefaults.standard.bool(forKey: Self.gemmaThinkingKey),
@@ -257,8 +283,27 @@ final class SessionManager: ObservableObject {
                 lastError = "Gemma returned nothing — \(gemma.diag.get())"
             }
             return text
+        case "litert" where litert != nil:
+            let litert = litert!
+            let text = try await litert.transcribe(
+                samples, language: language, tone: store.tone,
+                customInstruction: Self.gemmaCustomInstruction())
+            if text.isEmpty, samples.count > 16000 {
+                lastError = "LiteRT returned nothing — \(litert.diag.get())"
+            }
+            return text
+        default:
+            return try await transcriber?.transcribe(samples, language: language) ?? ""
         }
-        return try await transcriber?.transcribe(samples, language: language) ?? ""
+    }
+
+    /// Which engine's breadcrumb to blame in the timeout banner.
+    private func engineStage() -> String {
+        switch UserDefaults.standard.string(forKey: Self.modelKey) {
+        case "gemma": gemma?.diag.get() ?? "gemma engine"
+        case "litert": litert?.diag.get() ?? "litert engine"
+        default: "whisper engine"
+        }
     }
 
     func finishSegment() {
@@ -306,7 +351,7 @@ final class SessionManager: ObservableObject {
             if let raced {
                 joined = raced
             } else {
-                let stage = self.gemma?.diag.get() ?? "whisper engine"
+                let stage = engineStage()
                 lastError = "Transcription timed out after 90s at stage: \(stage). If it finishes, the text appears as an Insert button on the keyboard."
                 Task { [weak self] in
                     let late = await work.value
@@ -402,7 +447,7 @@ final class SessionManager: ObservableObject {
             store.modelStatus = "Downloading \(Self.selectedModelDescription()) \(Int(fraction * 100))%…"
         case .loading:
             let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
-            if choice == "gemma" {
+            if choice == "gemma" || choice == "litert" {
                 loadingLabel = "Loading model"
             } else {
                 let model = choice == "accurate" ? Transcriber.accurateModel : Transcriber.turboModel

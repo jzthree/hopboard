@@ -56,3 +56,25 @@ final class GemmaOutputTests: XCTestCase {
         XCTAssertEqual(thinking, plain + "<|channel>thought\n")
     }
 }
+
+final class LiteRTEngineTests: XCTestCase {
+    func testWavData() {
+        let wav = LiteRTEngine.wavData(from: [0, 0.5, -0.5, 1.5])
+        XCTAssertEqual(wav.count, 44 + 8)
+        XCTAssertEqual(String(decoding: wav.prefix(4), as: UTF8.self), "RIFF")
+        XCTAssertEqual(String(decoding: wav[8..<12], as: UTF8.self), "WAVE")
+        XCTAssertEqual(String(decoding: wav[36..<40], as: UTF8.self), "data")
+        // Little-endian data-chunk size = 4 samples × 2 bytes.
+        XCTAssertEqual(wav[40..<44], Data([8, 0, 0, 0]))
+        // 16 kHz little-endian at offset 24.
+        XCTAssertEqual(wav[24..<28], Data([0x80, 0x3E, 0, 0]))
+        // Samples: 0, +half, -half, and 1.5 clamps to Int16.max.
+        let pcm = wav.suffix(8).withUnsafeBytes { buf in
+            (0..<4).map { Int16(littleEndian: buf.loadUnaligned(fromByteOffset: $0 * 2, as: Int16.self)) }
+        }
+        XCTAssertEqual(pcm[0], 0)
+        XCTAssertEqual(pcm[1], 16383)
+        XCTAssertEqual(pcm[2], -16383)
+        XCTAssertEqual(pcm[3], 32767)
+    }
+}

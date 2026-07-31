@@ -262,24 +262,40 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 .tag("gemma")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Gemma 4 LiteRT (experimental)")
+                    Text("same model via Google's official runtime · QAT quant, likely more accurate · extra 2.6 GB")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .tag("litert")
             }
             .pickerStyle(.navigationLink)
             .onChange(of: modelChoice) { _, _ in
                 // The new model loads on the next session start.
                 session.endSession()
             }
-            if modelChoice == "gemma" {
-                Toggle("Gemma thinking", isOn: $gemmaThinking)
-                if gemmaThinking {
-                    Picker("Thinking budget", selection: $gemmaThinkingBudget) {
-                        Text("Brief · 48 tokens").tag(48)
-                        Text("Medium · 160 tokens").tag(160)
-                        Text("Unlimited").tag(0)
+            if modelChoice == "gemma" || modelChoice == "litert" {
+                // Thinking knobs are llama.cpp-path only: LiteRT's shipped
+                // binaries predate the thinking API, so showing the controls
+                // there would be showing switches wired to nothing.
+                if modelChoice == "gemma" {
+                    Toggle("Gemma thinking", isOn: $gemmaThinking)
+                    if gemmaThinking {
+                        Picker("Thinking budget", selection: $gemmaThinkingBudget) {
+                            Text("Brief · 48 tokens").tag(48)
+                            Text("Medium · 160 tokens").tag(160)
+                            Text("Unlimited").tag(0)
+                        }
                     }
                 }
                 NavigationLink {
-                    GemmaPromptEditor(defaultInstruction: GemmaEngine.instruction(
-                        language: languageCode, tone: session.tone))
+                    GemmaPromptEditor(
+                        defaultInstruction: GemmaEngine.instruction(
+                            language: languageCode, tone: session.tone),
+                        // LiteRT applies Gemma's template inside the runtime,
+                        // so the llama.cpp assembly preview would be a lie.
+                        showsAssembledPrompt: modelChoice == "gemma")
                 } label: {
                     LabeledContent("Prompt",
                                    value: gemmaCustomInstruction
@@ -502,6 +518,10 @@ struct GemmaPromptEditor: View {
     /// The built-in instruction for the currently pinned language + tone,
     /// shown and restored by Reset.
     let defaultInstruction: String
+    /// The llama.cpp engine assembles the template itself, so the exact
+    /// prompt is showable; LiteRT templates inside the runtime, so for it
+    /// only the instruction is ours to show.
+    var showsAssembledPrompt = true
 
     @AppStorage(SessionManager.gemmaCustomInstructionKey) private var custom = ""
     @AppStorage(SessionManager.gemmaThinkingKey) private var thinking = false
@@ -536,18 +556,26 @@ struct GemmaPromptEditor: View {
             } footer: {
                 Text("The default follows your pinned language and tone. A custom instruction replaces it verbatim for every dictation — language and tone stop shaping the prompt (tone still applies its light deterministic touch-up to the result). Applies from your next dictation.")
             }
-            Section {
-                Text(GemmaEngine.assemblePrompt(instruction: effectiveInstruction,
-                                                thinking: thinking))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            } header: {
-                Text("Exact prompt sent to Gemma")
-            } footer: {
-                Text(thinking
-                    ? "The audio placeholder is replaced by your recording. The final line pre-opens the thought channel because Gemma thinking is on."
-                    : "The audio placeholder is replaced by your recording.")
+            if showsAssembledPrompt {
+                Section {
+                    Text(GemmaEngine.assemblePrompt(instruction: effectiveInstruction,
+                                                    thinking: thinking))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                } header: {
+                    Text("Exact prompt sent to Gemma")
+                } footer: {
+                    Text(thinking
+                        ? "The audio placeholder is replaced by your recording. The final line pre-opens the thought channel because Gemma thinking is on."
+                        : "The audio placeholder is replaced by your recording.")
+                }
+            } else {
+                Section {
+                    Text("LiteRT applies Gemma's chat template inside the runtime; this instruction is sent alongside your audio as the user turn.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Gemma Prompt")

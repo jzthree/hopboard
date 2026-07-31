@@ -7,6 +7,14 @@ packages:
   ArgmaxOSS:
     url: https://github.com/argmaxinc/argmax-oss-swift
     from: 1.0.0
+  # Google's official runtime for the Gemma 4 LiteRT engine (QAT quant,
+  # audio input). VENDORED local package, not a remote dependency — the
+  # upstream repo is currently unbuildable via SPM at every recent
+  # revision (stale tag checksums, sources drifted past the shipped
+  # binaries, a missing LFS object aborting clones). See the provenance
+  # note in Vendor/LiteRTLM/Package.swift.
+  LiteRTLM:
+    path: Vendor/LiteRTLM
 targets:
   HopBoard:
     type: application
@@ -17,6 +25,8 @@ targets:
     dependencies:
       - package: ArgmaxOSS
         product: WhisperKit
+      - package: LiteRTLM
+        product: LiteRTLM
       - target: HopBoardKeyboard
       # llama.cpp with libmtmd (audio) for the experimental Gemma 4 engine.
       # 800 MB, NOT committed — scripts/fetch_llama.sh downloads it.
