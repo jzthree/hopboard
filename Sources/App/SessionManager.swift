@@ -52,6 +52,15 @@ final class SessionManager: ObservableObject {
     static let languageKey = "flow.language"
     static let modelKey = "flow.model"
     static let gemmaThinkingKey = "flow.gemmaThinking"
+    static let gemmaThinkingBudgetKey = "flow.gemmaThinkingBudget"
+
+    /// Max thought tokens per dictation window (0 = unlimited). Defaults to
+    /// Brief: the ~170-token unlimited thought is checklist boilerplate that
+    /// dominates decode time, and forced-close answers matched unlimited
+    /// answers in harness validation.
+    static func gemmaThinkingBudget() -> Int {
+        (UserDefaults.standard.object(forKey: gemmaThinkingBudgetKey) as? Int) ?? 48
+    }
 
     /// Human name + size of the currently selected model, for download UI.
     static func selectedModelDescription() -> String {
@@ -225,7 +234,8 @@ final class SessionManager: ObservableObject {
         if UserDefaults.standard.string(forKey: Self.modelKey) == "gemma", let gemma {
             let text = try await gemma.transcribe(
                 samples, language: language, tone: store.tone,
-                thinking: UserDefaults.standard.bool(forKey: Self.gemmaThinkingKey))
+                thinking: UserDefaults.standard.bool(forKey: Self.gemmaThinkingKey),
+                thinkingBudget: Self.gemmaThinkingBudget())
             if text.isEmpty, samples.count > 16000 {
                 // A second of real audio should never transcribe to nothing
                 // — surface what the engine actually did.

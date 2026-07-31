@@ -198,7 +198,7 @@ actor GemmaEngine {
     }
 
     func transcribe(_ samples: [Float], language: String?, tone: FlowTone,
-                    thinking: Bool = false) throws -> String {
+                    thinking: Bool = false, thinkingBudget: Int = 0) throws -> String {
         guard isReady, let context, let mtmd, let model else {
             throw NSError(domain: "Gemma", code: 5,
                           userInfo: [NSLocalizedDescriptionKey: "Gemma not loaded"])
@@ -269,12 +269,38 @@ actor GemmaEngine {
         defer { llama_sampler_free(sampler) }
 
         diag.set("decoding (n_past=\(nPast))…")
+        // Thinking budget: the thought channel closes with a single special
+        // token ("<channel|>"); once the cap is hit we feed that closer
+        // ourselves so the model stops reasoning and answers — the same trick
+        // as llama.cpp's --reasoning-budget. Harness-validated: forced-close
+        // answers matched unlimited-thinking answers on en and zh audio,
+        // and the ~170-token thought preamble is checklist boilerplate.
+        let closerText = "<channel|>"
+        var closerTokens = [llama_token](repeating: 0, count: 8)
+        let nCloser = closerText.withCString { c in
+            llama_tokenize(vocab, c, Int32(strlen(c)), &closerTokens, 8, false, true)
+        }
+        var inThought = thinking
+        var thoughtTokens = 0
+        var thoughtCapped = false
+
         var bytes: [UInt8] = []
         var pieceBuf = [CChar](repeating: 0, count: 256)
         for _ in 0..<700 {
             if abortFlag.get() {
                 diag.set("aborted by session end")
                 return ""
+            }
+            if inThought, thinkingBudget > 0, thoughtTokens >= thinkingBudget, nCloser > 0 {
+                var forced = Array(closerTokens.prefix(Int(nCloser)))
+                let closed = forced.withUnsafeMutableBufferPointer { p -> Bool in
+                    let batch = llama_batch_get_one(p.baseAddress, Int32(p.count))
+                    return llama_decode(context, batch) == 0
+                }
+                guard closed else { break }
+                bytes.append(contentsOf: Array(closerText.utf8))
+                inThought = false
+                thoughtCapped = true
             }
             var token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) { break }
@@ -286,13 +312,21 @@ actor GemmaEngine {
                     }
                 }
             }
+            if inThought {
+                thoughtTokens += 1
+                if (nCloser == 1 && token == closerTokens[0])
+                    || String(decoding: bytes, as: UTF8.self).hasSuffix(closerText) {
+                    inThought = false
+                }
+            }
             let batch = llama_batch_get_one(&token, 1)
             guard llama_decode(context, batch) == 0 else { break }
         }
 
         let raw = String(decoding: bytes, as: UTF8.self)
         let stripped = Self.stripThinking(raw)
-        diag.set("done: n_past=\(nPast), \(bytes.count) bytes, raw='\(raw.prefix(120))'")
+        diag.set("done: n_past=\(nPast), \(bytes.count) bytes, "
+            + "thought=\(thoughtTokens)\(thoughtCapped ? " capped" : ""), raw='\(raw.prefix(120))'")
         return stripped
     }
 

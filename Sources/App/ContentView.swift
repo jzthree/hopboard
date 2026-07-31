@@ -7,6 +7,7 @@ struct ContentView: View {
     @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
     @AppStorage(SessionManager.modelKey) private var modelChoice = "turbo"
     @AppStorage(SessionManager.gemmaThinkingKey) private var gemmaThinking = false
+    @AppStorage(SessionManager.gemmaThinkingBudgetKey) private var gemmaThinkingBudget = 48
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
@@ -268,11 +269,18 @@ struct ContentView: View {
             }
             if modelChoice == "gemma" {
                 Toggle("Gemma thinking", isOn: $gemmaThinking)
+                if gemmaThinking {
+                    Picker("Thinking budget", selection: $gemmaThinkingBudget) {
+                        Text("Brief · 48 tokens").tag(48)
+                        Text("Medium · 160 tokens").tag(160)
+                        Text("Unlimited").tag(0)
+                    }
+                }
             }
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation. Changes apply from your next dictation; model changes from your next session.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
         }
     }
 
