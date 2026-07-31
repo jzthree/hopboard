@@ -177,7 +177,8 @@ actor GemmaEngine {
         return base + style + " Output only the transcription, nothing else."
     }
 
-    func transcribe(_ samples: [Float], language: String?, tone: FlowTone) throws -> String {
+    func transcribe(_ samples: [Float], language: String?, tone: FlowTone,
+                    thinking: Bool = false) throws -> String {
         guard isReady, let context, let mtmd, let model else {
             throw NSError(domain: "Gemma", code: 5,
                           userInfo: [NSLocalizedDescriptionKey: "Gemma not loaded"])
@@ -194,9 +195,13 @@ actor GemmaEngine {
         // model EOG instantly — every dictation came back empty. BOS is
         // added by tokenize (add_special), not written here. And do NOT
         // prefill an empty thought block — tried, also breaks generation.
+        // thinking=true opens the thought channel the model natively uses
+        // (observed verbatim in its own output), inviting a reasoning pass
+        // before the answer; stripThinking() extracts the answer either way.
         let prompt = "<|turn>user\n"
             + Self.instruction(language: language, tone: tone)
             + " " + marker + "<turn|>\n<|turn>model\n"
+            + (thinking ? "<|channel>thought\n" : "")
 
         guard let bitmap = samples.withUnsafeBufferPointer({
             mtmd_bitmap_init_from_audio(samples.count, $0.baseAddress)

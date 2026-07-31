@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var copiedResultID: UUID?
     @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
     @AppStorage(SessionManager.modelKey) private var modelChoice = "turbo"
+    @AppStorage(SessionManager.gemmaThinkingKey) private var gemmaThinking = false
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
@@ -259,10 +260,13 @@ struct ContentView: View {
                 // The new model loads on the next session start.
                 session.endSession()
             }
+            if modelChoice == "gemma" {
+                Toggle("Gemma thinking", isOn: $gemmaThinking)
+            }
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese. Changes apply from your next session.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation. Changes apply from your next dictation; model changes from your next session.")
         }
     }
 

@@ -25,6 +25,12 @@ final class SessionManager: ObservableObject {
     private var heartbeatTimer: Timer?
     private var idleTimer: Timer?
     private var levelWriteGate = Date.distantPast
+    /// Monotonic session epoch: every start/end/model-switch increments
+    /// it, and every async continuation validates it before touching live
+    /// state. Work from a dead epoch may add to history but can never
+    /// change the current session or reach the keyboard.
+    private var sessionEpoch = 0
+
     /// Serial chain of window transcriptions for the segment in progress.
     /// Long dictations transcribe while the user is still talking; at stop
     /// only the tail remains. Each window's samples are owned by its task
@@ -40,6 +46,7 @@ final class SessionManager: ObservableObject {
     /// instead — the keyboard can change it too.
     static let languageKey = "flow.language"
     static let modelKey = "flow.model"
+    static let gemmaThinkingKey = "flow.gemmaThinking"
 
     /// Human name + size of the currently selected model, for download UI.
     static func selectedModelDescription() -> String {
@@ -90,6 +97,8 @@ final class SessionManager: ObservableObject {
 
     func startSession() async {
         guard state == .idle else { return }
+        sessionEpoch += 1
+        let epoch = sessionEpoch
         lastError = nil
 
         guard await ensureMicPermission() else {
@@ -113,6 +122,7 @@ final class SessionManager: ObservableObject {
             }
             self.gemma = gemma
             await gemma.load()
+            guard epoch == sessionEpoch else { return }
             guard await gemma.isReady else {
                 publish(.idle)
                 return
@@ -126,6 +136,7 @@ final class SessionManager: ObservableObject {
             let model = choice == "accurate"
                 ? Transcriber.accurateModel : Transcriber.turboModel
             await transcriber.load(model: model)
+            guard epoch == sessionEpoch else { return }
             guard await transcriber.isReady else {
                 publish(.idle)
                 return
@@ -159,6 +170,7 @@ final class SessionManager: ObservableObject {
 
     func endSession(reason: String? = nil) {
         guard state != .idle else { return }
+        sessionEpoch += 1
         recorder.stop()
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
@@ -200,7 +212,9 @@ final class SessionManager: ObservableObject {
     private func transcribeSamples(_ samples: [Float]) async throws -> String {
         let language = UserDefaults.standard.string(forKey: Self.languageKey)
         if UserDefaults.standard.string(forKey: Self.modelKey) == "gemma", let gemma {
-            let text = try await gemma.transcribe(samples, language: language, tone: store.tone)
+            let text = try await gemma.transcribe(
+                samples, language: language, tone: store.tone,
+                thinking: UserDefaults.standard.bool(forKey: Self.gemmaThinkingKey))
             if text.isEmpty, samples.count > 16000 {
                 // A second of real audio should never transcribe to nothing
                 // — surface what the engine actually did.
@@ -218,6 +232,7 @@ final class SessionManager: ObservableObject {
         let tone = store.tone
         let previous = windowChain
         windowChain = nil
+        let epoch = sessionEpoch
         Task {
             let prefix = await previous?.value ?? ""
             // Watchdog: engines (Gemma especially) can grind for minutes.
@@ -258,12 +273,28 @@ final class SessionManager: ObservableObject {
                                             text: tone.apply(to: FlowText.normalizeCJKPunctuation(late)),
                                             finishedAt: Date().timeIntervalSince1970)
                     self.store.append(result)
+                    if epoch != self.sessionEpoch {
+                        self.store.lastConsumedResultID = result.id
+                    }
                     self.transcripts = self.store.results
                     self.bus.post(Flow.stateNotification)
                 }
             }
             let text = tone.apply(to: FlowText.normalizeCJKPunctuation(
                 [prefix, tailText].filter { !$0.isEmpty }.joined(separator: " ")))
+            guard epoch == self.sessionEpoch else {
+                // The session this belonged to is gone: preserve the text in
+                // the app's history, pre-consumed so the keyboard never
+                // auto-inserts or offers it in a NEW session.
+                if !text.isEmpty {
+                    let result = FlowResult(id: UUID(), text: text,
+                                            finishedAt: Date().timeIntervalSince1970)
+                    self.store.append(result)
+                    self.store.lastConsumedResultID = result.id
+                    self.transcripts = self.store.results
+                }
+                return
+            }
             // Always deliver a result — an empty one releases the keyboard
             // from its spinner instead of leaving it waiting forever.
             let result = FlowResult(id: UUID(), text: text, finishedAt: Date().timeIntervalSince1970)
