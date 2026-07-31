@@ -30,10 +30,19 @@ final class ConversationBox: @unchecked Sendable {
 /// itself, so no <|turn> assembly on our side; thinking and its budget map
 /// onto the runtime's own ThinkingConfig.
 actor LiteRTEngine {
-    static let modelURL = URL(string: "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm")!
+    /// Official QAT builds: E2B (fast) and E4B (more accurate, both with
+    /// audio models included). Bigger litert-community builds exist (12B =
+    /// 6.5 GB) but their model cards target macOS/linux/web, and a
+    /// backgrounded iOS app holding 6.5 GB would be jetsam-killed — E4B is
+    /// the on-phone ceiling.
+    static func modelURL(variant: String) -> URL {
+        let name = variant == "e4b" ? "gemma-4-E4B-it" : "gemma-4-E2B-it"
+        return URL(string: "https://huggingface.co/litert-community/\(name)-litert-lm/resolve/main/\(name).litertlm")!
+    }
 
     private var engine: LiteRTLM.Engine?
     private(set) var isReady = false
+    private var loadedVariant: String?
     /// Stage-by-stage breadcrumb of the current/last transcription attempt,
     /// readable even mid-compute.
     nonisolated let diag = DiagBox()
@@ -53,16 +62,24 @@ actor LiteRTEngine {
         live.cancelLive()
     }
 
-    private static var modelPath: URL {
+    private static func modelPath(variant: String) -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("litertlm", isDirectory: true)
-            .appendingPathComponent("model.litertlm")
+            .appendingPathComponent("model-\(variant).litertlm")
     }
 
     // MARK: download
 
-    private func ensureFile() async throws -> URL {
-        let destination = Self.modelPath
+    private func ensureFile(variant: String) async throws -> URL {
+        let destination = Self.modelPath(variant: variant)
+        // The first shipped build stored E2B as plain model.litertlm —
+        // adopt it rather than re-downloading 2.6 GB.
+        let legacy = destination.deletingLastPathComponent()
+            .appendingPathComponent("model.litertlm")
+        if variant == "e2b", FileManager.default.fileExists(atPath: legacy.path),
+           !FileManager.default.fileExists(atPath: destination.path) {
+            try? FileManager.default.moveItem(at: legacy, to: destination)
+        }
         guard !FileManager.default.fileExists(atPath: destination.path) else { return destination }
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
@@ -71,7 +88,7 @@ actor LiteRTEngine {
         let handle = try FileHandle(forWritingTo: partial)
         defer { try? handle.close() }
 
-        let (bytes, response) = try await URLSession.shared.bytes(from: Self.modelURL)
+        let (bytes, response) = try await URLSession.shared.bytes(from: Self.modelURL(variant: variant))
         let total = Double(response.expectedContentLength)
         var written: Double = 0
         var chunk = Data(capacity: 1 << 20)
@@ -95,14 +112,16 @@ actor LiteRTEngine {
 
     // MARK: lifecycle
 
-    func load() async {
-        guard !isReady else {
+    func load(variant: String) async {
+        guard !(isReady && loadedVariant == variant) else {
             onState(.ready)
             return
         }
+        // Size switch: free the old engine before standing up the new one.
+        if isReady { unload() }
         do {
             onState(.downloading(0))
-            let modelFile = try await ensureFile()
+            let modelFile = try await ensureFile(variant: variant)
             let modelBytes = (try? FileManager.default.attributesOfItem(atPath: modelFile.path)[.size] as? Int) ?? 0
             diag.set("file: \(modelBytes ?? 0)B")
             onState(.loading)
@@ -123,10 +142,12 @@ actor LiteRTEngine {
             try await engine.initialize()
             self.engine = engine
             isReady = true
+            loadedVariant = variant
             onState(.ready)
         } catch {
             engine = nil
             isReady = false
+            loadedVariant = nil
             onState(.failed(error.localizedDescription))
         }
     }
@@ -134,6 +155,7 @@ actor LiteRTEngine {
     func unload() {
         engine = nil
         isReady = false
+        loadedVariant = nil
         onState(.unloaded)
     }
 

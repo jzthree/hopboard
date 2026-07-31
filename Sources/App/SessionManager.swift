@@ -55,6 +55,11 @@ final class SessionManager: ObservableObject {
     static let gemmaThinkingKey = "flow.gemmaThinking"
     static let gemmaThinkingBudgetKey = "flow.gemmaThinkingBudget"
     static let gemmaCustomInstructionKey = "flow.gemmaCustomInstruction"
+    static let litertVariantKey = "flow.litertVariant"
+
+    static func litertVariant() -> String {
+        UserDefaults.standard.string(forKey: litertVariantKey) ?? "e2b"
+    }
 
     /// Advanced mode: a non-blank custom instruction replaces the built-in
     /// per-language/tone instruction verbatim. Blank = defaults.
@@ -77,7 +82,8 @@ final class SessionManager: ObservableObject {
         switch UserDefaults.standard.string(forKey: modelKey) {
         case "accurate": "large-v3 (950 MB)"
         case "gemma": "Gemma 4 (4.1 GB)"
-        case "litert": "Gemma 4 LiteRT (2.6 GB)"
+        case "litert": litertVariant() == "e4b"
+            ? "Gemma 4 E4B LiteRT (3.7 GB)" : "Gemma 4 E2B LiteRT (2.6 GB)"
         default: "large-v3-turbo (626 MB)"
         }
     }
@@ -167,7 +173,7 @@ final class SessionManager: ObservableObject {
             }
             self.litert = litert
             litert.abortFlag.set(false)
-            await litert.load()
+            await litert.load(variant: Self.litertVariant())
             guard epoch == sessionEpoch else { return }
             guard await litert.isReady else {
                 publish(.idle)

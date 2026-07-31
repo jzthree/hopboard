@@ -9,6 +9,7 @@ struct ContentView: View {
     @AppStorage(SessionManager.gemmaThinkingKey) private var gemmaThinking = false
     @AppStorage(SessionManager.gemmaThinkingBudgetKey) private var gemmaThinkingBudget = 48
     @AppStorage(SessionManager.gemmaCustomInstructionKey) private var gemmaCustomInstruction = ""
+    @AppStorage(SessionManager.litertVariantKey) private var litertVariant = "e2b"
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
@@ -276,6 +277,29 @@ struct ContentView: View {
                 session.endSession()
             }
             if modelChoice == "gemma" || modelChoice == "litert" {
+                if modelChoice == "litert" {
+                    Picker("Size", selection: $litertVariant) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("E2B")
+                            Text("2.6 GB · faster")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag("e2b")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("E4B")
+                            Text("3.7 GB · more accurate, slower")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag("e4b")
+                    }
+                    .pickerStyle(.navigationLink)
+                    .onChange(of: litertVariant) { _, _ in
+                        // The new size loads on the next session start.
+                        session.endSession()
+                    }
+                }
                 // Thinking knobs are llama.cpp-path only: LiteRT's shipped
                 // binaries predate the thinking API, so showing the controls
                 // there would be showing switches wired to nothing.
