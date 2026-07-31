@@ -53,6 +53,15 @@ final class SessionManager: ObservableObject {
     static let modelKey = "flow.model"
     static let gemmaThinkingKey = "flow.gemmaThinking"
     static let gemmaThinkingBudgetKey = "flow.gemmaThinkingBudget"
+    static let gemmaCustomInstructionKey = "flow.gemmaCustomInstruction"
+
+    /// Advanced mode: a non-blank custom instruction replaces the built-in
+    /// per-language/tone instruction verbatim. Blank = defaults.
+    static func gemmaCustomInstruction() -> String? {
+        let text = UserDefaults.standard.string(forKey: gemmaCustomInstructionKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
+    }
 
     /// Max thought tokens per dictation window (0 = unlimited). Defaults to
     /// Brief: the ~170-token unlimited thought is checklist boilerplate that
@@ -240,7 +249,8 @@ final class SessionManager: ObservableObject {
             let text = try await gemma.transcribe(
                 samples, language: language, tone: store.tone,
                 thinking: UserDefaults.standard.bool(forKey: Self.gemmaThinkingKey),
-                thinkingBudget: Self.gemmaThinkingBudget())
+                thinkingBudget: Self.gemmaThinkingBudget(),
+                customInstruction: Self.gemmaCustomInstruction())
             if text.isEmpty, samples.count > 16000 {
                 // A second of real audio should never transcribe to nothing
                 // — surface what the engine actually did.

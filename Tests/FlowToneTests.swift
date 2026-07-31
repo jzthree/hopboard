@@ -42,4 +42,17 @@ final class GemmaOutputTests: XCTestCase {
             "<|channel>thought a <channel|> mid <|channel>thought b <channel|>final"),
             "final")
     }
+
+    /// The config screen previews assemblePrompt as "the exact prompt" —
+    /// pin the template so a drive-by edit can't silently change what both
+    /// the preview and transcribe() produce.
+    func testAssemblePrompt() {
+        let plain = GemmaEngine.assemblePrompt(instruction: "Transcribe.", thinking: false)
+        XCTAssertTrue(plain.hasPrefix("<|turn>user\nTranscribe. "))
+        XCTAssertTrue(plain.hasSuffix("<turn|>\n<|turn>model\n"))
+        // The audio marker sits between instruction and end-of-turn.
+        XCTAssertFalse(plain.contains("<|channel>thought"))
+        let thinking = GemmaEngine.assemblePrompt(instruction: "Transcribe.", thinking: true)
+        XCTAssertEqual(thinking, plain + "<|channel>thought\n")
+    }
 }

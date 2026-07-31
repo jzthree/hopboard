@@ -8,6 +8,7 @@ struct ContentView: View {
     @AppStorage(SessionManager.modelKey) private var modelChoice = "turbo"
     @AppStorage(SessionManager.gemmaThinkingKey) private var gemmaThinking = false
     @AppStorage(SessionManager.gemmaThinkingBudgetKey) private var gemmaThinkingBudget = 48
+    @AppStorage(SessionManager.gemmaCustomInstructionKey) private var gemmaCustomInstruction = ""
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
@@ -276,6 +277,15 @@ struct ContentView: View {
                         Text("Unlimited").tag(0)
                     }
                 }
+                NavigationLink {
+                    GemmaPromptEditor(defaultInstruction: GemmaEngine.instruction(
+                        language: languageCode, tone: session.tone))
+                } label: {
+                    LabeledContent("Prompt",
+                                   value: gemmaCustomInstruction
+                                       .trimmingCharacters(in: .whitespacesAndNewlines)
+                                       .isEmpty ? "Default" : "Custom")
+                }
             }
         } header: {
             Text("Dictation")
@@ -482,5 +492,69 @@ struct LevelMeter: View {
     private func barScale(_ weight: CGFloat) -> CGFloat {
         guard active else { return 0.25 }
         return max(0.15, min(1, 0.2 + CGFloat(level) * weight))
+    }
+}
+
+/// Advanced mode: see and edit the exact instruction Gemma receives.
+/// The "exact prompt" preview renders GemmaEngine.assemblePrompt — the
+/// same function transcribe() uses — so it can never drift from reality.
+struct GemmaPromptEditor: View {
+    /// The built-in instruction for the currently pinned language + tone,
+    /// shown and restored by Reset.
+    let defaultInstruction: String
+
+    @AppStorage(SessionManager.gemmaCustomInstructionKey) private var custom = ""
+    @AppStorage(SessionManager.gemmaThinkingKey) private var thinking = false
+    @State private var text = ""
+
+    private var trimmed: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    /// Mirrors SessionManager.gemmaCustomInstruction(): blank means default.
+    private var isCustom: Bool { !trimmed.isEmpty && trimmed != defaultInstruction }
+    private var effectiveInstruction: String {
+        isCustom ? trimmed : defaultInstruction
+    }
+
+    var body: some View {
+        List {
+            Section {
+                TextEditor(text: $text)
+                    .frame(minHeight: 140)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .onChange(of: text) { _, _ in
+                        custom = isCustom ? trimmed : ""
+                    }
+                Button("Reset to default") {
+                    text = defaultInstruction
+                    custom = ""
+                }
+                .disabled(!isCustom)
+            } header: {
+                Text("Instruction · \(isCustom ? "custom" : "default")")
+            } footer: {
+                Text("The default follows your pinned language and tone. A custom instruction replaces it verbatim for every dictation — language and tone stop shaping the prompt (tone still applies its light deterministic touch-up to the result). Applies from your next dictation.")
+            }
+            Section {
+                Text(GemmaEngine.assemblePrompt(instruction: effectiveInstruction,
+                                                thinking: thinking))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } header: {
+                Text("Exact prompt sent to Gemma")
+            } footer: {
+                Text(thinking
+                    ? "The audio placeholder is replaced by your recording. The final line pre-opens the thought channel because Gemma thinking is on."
+                    : "The audio placeholder is replaced by your recording.")
+            }
+        }
+        .navigationTitle("Gemma Prompt")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            let saved = custom.trimmingCharacters(in: .whitespacesAndNewlines)
+            text = saved.isEmpty ? defaultInstruction : saved
+        }
     }
 }

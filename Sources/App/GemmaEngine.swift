@@ -199,8 +199,26 @@ actor GemmaEngine {
         return base + style + " Output only the transcription, nothing else."
     }
 
+    /// The one true prompt assembly — the config screen's "exact prompt"
+    /// preview renders THIS, so it can never drift from what transcribe()
+    /// sends. Gemma 4's template is NOT Gemma 3's <start_of_turn> — it uses
+    /// <|turn>…<turn|> markers (ground truth: the GGUF's own jinja template
+    /// rendered for one user turn). The wrong markers made the model EOG
+    /// instantly — every dictation came back empty. BOS is added by
+    /// tokenize (add_special), not written here. And do NOT prefill an
+    /// empty thought block — tried, also breaks generation. thinking=true
+    /// opens the thought channel the model natively uses (observed verbatim
+    /// in its own output), inviting a reasoning pass before the answer;
+    /// stripThinking() extracts the answer either way.
+    static func assemblePrompt(instruction: String, thinking: Bool) -> String {
+        let marker = String(cString: mtmd_default_marker())
+        return "<|turn>user\n" + instruction + " " + marker + "<turn|>\n<|turn>model\n"
+            + (thinking ? "<|channel>thought\n" : "")
+    }
+
     func transcribe(_ samples: [Float], language: String?, tone: FlowTone,
-                    thinking: Bool = false, thinkingBudget: Int = 0) throws -> String {
+                    thinking: Bool = false, thinkingBudget: Int = 0,
+                    customInstruction: String? = nil) throws -> String {
         guard isReady, let context, let mtmd, let model else {
             throw NSError(domain: "Gemma", code: 5,
                           userInfo: [NSLocalizedDescriptionKey: "Gemma not loaded"])
@@ -211,20 +229,9 @@ actor GemmaEngine {
         // Fresh conversation per dictation.
         llama_memory_clear(llama_get_memory(context), true)
 
-        let marker = String(cString: mtmd_default_marker())
-        // Gemma 4's template is NOT Gemma 3's <start_of_turn> — it uses
-        // <|turn>…<turn|> markers (ground truth: the GGUF's own jinja
-        // template rendered for one user turn). The wrong markers made the
-        // model EOG instantly — every dictation came back empty. BOS is
-        // added by tokenize (add_special), not written here. And do NOT
-        // prefill an empty thought block — tried, also breaks generation.
-        // thinking=true opens the thought channel the model natively uses
-        // (observed verbatim in its own output), inviting a reasoning pass
-        // before the answer; stripThinking() extracts the answer either way.
-        let prompt = "<|turn>user\n"
-            + Self.instruction(language: language, tone: tone)
-            + " " + marker + "<turn|>\n<|turn>model\n"
-            + (thinking ? "<|channel>thought\n" : "")
+        let prompt = Self.assemblePrompt(
+            instruction: customInstruction ?? Self.instruction(language: language, tone: tone),
+            thinking: thinking)
 
         guard let bitmap = samples.withUnsafeBufferPointer({
             mtmd_bitmap_init_from_audio(samples.count, $0.baseAddress)
