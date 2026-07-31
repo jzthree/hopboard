@@ -10,6 +10,11 @@ final class SessionManager: ObservableObject {
     @Published private(set) var modelState: Transcriber.State = .unloaded
     @Published private(set) var transcripts: [FlowResult] = []
     @Published private(set) var micLevel: Float = 0
+    /// "Optimizing for Neural Engine" vs plain "Loading model" — they are
+    /// different waits (minutes vs seconds) and are labeled as such.
+    @Published private(set) var loadingLabel = "Loading model"
+    /// When the current transcription started (drives the app's timer).
+    @Published private(set) var transcribingSince: Date?
     @Published var lastError: String?
     @Published private(set) var micPermission = AVAudioApplication.shared.recordPermission
     /// Mirrors FlowStore.tone; the keyboard's tone chip changes it too.
@@ -121,6 +126,7 @@ final class SessionManager: ObservableObject {
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
             self.gemma = gemma
+            gemma.abortFlag.set(false)
             await gemma.load()
             guard epoch == sessionEpoch else { return }
             guard await gemma.isReady else {
@@ -171,6 +177,7 @@ final class SessionManager: ObservableObject {
     func endSession(reason: String? = nil) {
         guard state != .idle else { return }
         sessionEpoch += 1
+        gemma?.abortFlag.set(true)
         recorder.stop()
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
@@ -200,8 +207,12 @@ final class SessionManager: ObservableObject {
         guard state == .recording else { return }
         touchIdleTimer()   // a long monologue is activity, not idleness
         let previous = windowChain
+        let epoch = sessionEpoch
         windowChain = Task { [weak self] in
             let prefix = await previous?.value ?? ""
+            // A window queued for a dead session must not burn minutes of
+            // CPU; its session can never use the text.
+            guard epoch == self?.sessionEpoch else { return prefix }
             let text = (try? await self?.transcribeSamples(window)) ?? ""
             return [prefix, text].filter { !$0.isEmpty }.joined(separator: " ")
         }
@@ -218,7 +229,7 @@ final class SessionManager: ObservableObject {
             if text.isEmpty, samples.count > 16000 {
                 // A second of real audio should never transcribe to nothing
                 // — surface what the engine actually did.
-                lastError = "Gemma returned nothing — \(await gemma.lastDiagnostic)"
+                lastError = "Gemma returned nothing — \(gemma.diag.get())"
             }
             return text
         }
@@ -241,14 +252,19 @@ final class SessionManager: ObservableObject {
             // offers it as an Insert pill instead of losing it.
             // Errors must surface, not vanish into try? — a throwing engine
             // looked identical to silence from the keyboard.
+            // Watchdog wraps the ENTIRE pipeline — window-chain await
+            // included; racing only the tail left the keyboard hung when a
+            // queued window was the slow part.
             let work = Task { [weak self] () -> String in
+                let prefix = await previous?.value ?? ""
                 do {
-                    return try await self?.transcribeSamples(tail) ?? ""
+                    let tailText = try await self?.transcribeSamples(tail) ?? ""
+                    return [prefix, tailText].filter { !$0.isEmpty }.joined(separator: " ")
                 } catch {
                     await MainActor.run { [weak self] in
                         self?.lastError = "Transcription failed: \(error.localizedDescription)"
                     }
-                    return ""
+                    return prefix
                 }
             }
             let raced = await withTaskGroup(of: String?.self) { group in
@@ -261,11 +277,12 @@ final class SessionManager: ObservableObject {
                 group.cancelAll()
                 return first
             }
-            var tailText = ""
+            var joined = ""
             if let raced {
-                tailText = raced
+                joined = raced
             } else {
-                lastError = "Transcription is taking unusually long — if it finishes, the text will appear on the keyboard as an Insert button."
+                let stage = self.gemma?.diag.get() ?? "whisper engine"
+                lastError = "Transcription timed out after 90s at stage: \(stage). If it finishes, the text appears as an Insert button on the keyboard."
                 Task { [weak self] in
                     let late = await work.value
                     guard let self, !late.isEmpty else { return }
@@ -280,8 +297,7 @@ final class SessionManager: ObservableObject {
                     self.bus.post(Flow.stateNotification)
                 }
             }
-            let text = tone.apply(to: FlowText.normalizeCJKPunctuation(
-                [prefix, tailText].filter { !$0.isEmpty }.joined(separator: " ")))
+            let text = tone.apply(to: FlowText.normalizeCJKPunctuation(joined))
             guard epoch == self.sessionEpoch else {
                 // The session this belonged to is gone: preserve the text in
                 // the app's history, pre-consumed so the keyboard never
@@ -340,6 +356,11 @@ final class SessionManager: ObservableObject {
     // MARK: plumbing
 
     private func publish(_ new: SessionState) {
+        if new == .transcribing {
+            if transcribingSince == nil { transcribingSince = Date() }
+        } else {
+            transcribingSince = nil
+        }
         state = new
         store.state = new
         store.heartbeat = Date()
@@ -355,7 +376,15 @@ final class SessionManager: ObservableObject {
         case .downloading(let fraction):
             store.modelStatus = "Downloading \(Self.selectedModelDescription()) \(Int(fraction * 100))%…"
         case .loading:
-            store.modelStatus = "Loading model…"
+            let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
+            if choice == "gemma" {
+                loadingLabel = "Loading model"
+            } else {
+                let model = choice == "accurate" ? Transcriber.accurateModel : Transcriber.turboModel
+                loadingLabel = Transcriber.hasOptimized(model)
+                    ? "Loading model" : "Optimizing for Neural Engine"
+            }
+            store.modelStatus = loadingLabel + "…"
         case .ready:
             store.modelStatus = ""
         case .failed(let message):

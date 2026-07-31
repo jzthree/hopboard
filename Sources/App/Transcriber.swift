@@ -53,6 +53,18 @@ actor Transcriber {
 
     var isReady: Bool { pipe != nil }
 
+    /// True once this model has fully loaded under this app build — i.e.
+    /// the slow one-time Neural Engine specialization is behind us and
+    /// future loads are plain (fast) loads.
+    static func hasOptimized(_ model: String) -> Bool {
+        UserDefaults.standard.bool(forKey: optimizedKey(model))
+    }
+
+    private static func optimizedKey(_ model: String) -> String {
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        return "flow.aneOptimized.\(model).\(build)"
+    }
+
     func load(model: String) async {
         if pipe != nil, loadedModel == model {
             set(.ready)
@@ -76,6 +88,7 @@ actor Transcriber {
                 load: true,
                 download: false)
             pipe = try await WhisperKit(config)
+            UserDefaults.standard.set(true, forKey: Self.optimizedKey(model))
             set(.ready)
         } catch {
             set(.failed(error.localizedDescription))

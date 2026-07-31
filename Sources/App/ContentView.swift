@@ -128,7 +128,7 @@ struct ContentView: View {
             case .loading:
                 ProgressView()
                 HStack(spacing: 6) {
-                    Text("Loading model")
+                    Text(session.loadingLabel)
                         .font(.callout)
                     if let start = loadingStart {
                         Text(timerInterval: start...Date.distantFuture, countsDown: false)
@@ -154,10 +154,16 @@ struct ContentView: View {
             LevelMeter(level: session.micLevel, active: session.state == .recording)
                 .frame(height: 44)
 
-            Text(activeCaption)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            HStack(spacing: 6) {
+                Text(activeCaption)
+                    .font(.callout)
+                if session.state == .transcribing, let since = session.transcribingSince {
+                    Text(timerInterval: since...Date.distantFuture, countsDown: false)
+                        .font(.callout.monospacedDigit())
+                }
+            }
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
 
             if session.state == .ready {
                 // Unhurried but unmissable: a static tinted pill, no motion.

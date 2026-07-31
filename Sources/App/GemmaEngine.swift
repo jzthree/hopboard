@@ -9,6 +9,24 @@ import llama
 /// (it even keeps 啊/呢 particles Whisper drops). Trade-offs: ~4.1 GB of
 /// weights, GPU instead of Neural Engine, and a "thinking" preamble that
 /// must be parsed away (and paid for in decode time).
+/// Cross-isolation abort switch: settable while the actor is busy inside
+/// a decode loop (an actor message couldn't be processed until too late).
+final class AbortFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func set(_ newValue: Bool) { lock.lock(); value = newValue; lock.unlock() }
+    func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
+}
+
+/// Stage breadcrumb readable while the actor is busy computing — the whole
+/// point is diagnosing a wedged engine, which an actor await cannot do.
+final class DiagBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = "no attempt yet"
+    func set(_ newValue: String) { lock.lock(); value = newValue; lock.unlock() }
+    func get() -> String { lock.lock(); defer { lock.unlock() }; return value }
+}
+
 actor GemmaEngine {
     static let modelURL = URL(string: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf")!
     static let mmprojURL = URL(string: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf")!
@@ -17,9 +35,11 @@ actor GemmaEngine {
     private var context: OpaquePointer?
     private var mtmd: OpaquePointer?
     private(set) var isReady = false
-    /// One line describing the last transcription attempt — surfaced in
-    /// the app when output is empty, so device failures are diagnosable.
-    private(set) var lastDiagnostic = "no attempt yet"
+    /// Stage-by-stage breadcrumb of the current/last transcription attempt,
+    /// surfaced in the app — readable even mid-compute.
+    nonisolated let diag = DiagBox()
+    /// Ending a session aborts in-flight decode within one token.
+    nonisolated let abortFlag = AbortFlag()
     private let onState: @Sendable (Transcriber.State) -> Void
 
     init(onState: @escaping @Sendable (Transcriber.State) -> Void) {
@@ -85,7 +105,7 @@ actor GemmaEngine {
             let files = try await ensureFiles()
             let modelBytes = (try? FileManager.default.attributesOfItem(atPath: files.model.path)[.size] as? Int) ?? 0
             let mmprojBytes = (try? FileManager.default.attributesOfItem(atPath: files.mmproj.path)[.size] as? Int) ?? 0
-            lastDiagnostic = "files: model=\(modelBytes ?? 0)B mmproj=\(mmprojBytes ?? 0)B"
+            diag.set("files: model=\(modelBytes ?? 0)B mmproj=\(mmprojBytes ?? 0)B")
             onState(.loading)
 
             llama_backend_init()
@@ -184,6 +204,7 @@ actor GemmaEngine {
                           userInfo: [NSLocalizedDescriptionKey: "Gemma not loaded"])
         }
         guard samples.count >= 8000 else { return "" }
+        if abortFlag.get() { return "" }
 
         // Fresh conversation per dictation.
         llama_memory_clear(llama_get_memory(context), true)
@@ -228,15 +249,16 @@ actor GemmaEngine {
             }
         }
         guard tokenizeResult == 0 else {
-            lastDiagnostic = "tokenize failed (\(tokenizeResult))"
+            diag.set("tokenize failed (\(tokenizeResult))")
             throw NSError(domain: "Gemma", code: 8,
                           userInfo: [NSLocalizedDescriptionKey: "Tokenize failed (\(tokenizeResult))"])
         }
 
+        diag.set("audio eval running (\(samples.count) samples)…")
         var nPast: llama_pos = 0
         let evalResult = mtmd_helper_eval_chunks(mtmd, context, chunks, 0, 0, 2048, true, &nPast)
         guard evalResult == 0 else {
-            lastDiagnostic = "audio eval failed (\(evalResult))"
+            diag.set("audio eval failed (\(evalResult))")
             throw NSError(domain: "Gemma", code: 9,
                           userInfo: [NSLocalizedDescriptionKey: "Audio evaluation failed (\(evalResult))"])
         }
@@ -246,9 +268,14 @@ actor GemmaEngine {
         llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
         defer { llama_sampler_free(sampler) }
 
+        diag.set("decoding (n_past=\(nPast))…")
         var bytes: [UInt8] = []
         var pieceBuf = [CChar](repeating: 0, count: 256)
         for _ in 0..<700 {
+            if abortFlag.get() {
+                diag.set("aborted by session end")
+                return ""
+            }
             var token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) { break }
             let n = llama_token_to_piece(vocab, token, &pieceBuf, 256, 0, true)
@@ -265,7 +292,7 @@ actor GemmaEngine {
 
         let raw = String(decoding: bytes, as: UTF8.self)
         let stripped = Self.stripThinking(raw)
-        lastDiagnostic = "n_past=\(nPast), generated \(bytes.count) bytes, raw='\(raw.prefix(120))'"
+        diag.set("done: n_past=\(nPast), \(bytes.count) bytes, raw='\(raw.prefix(120))'")
         return stripped
     }
 
