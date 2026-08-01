@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import WhisperKit
 
@@ -22,6 +23,17 @@ struct ContentView: View {
             .map { (name: $0.key.capitalized, code: $0.value) }
             .sorted { $0.name < $1.name }
 
+    private static let settingsAnchor = "dictation-settings"
+
+    /// The mode the user picked in Control Center, named as iOS names it.
+    private var micModeName: String {
+        switch AVCaptureDevice.preferredMicrophoneMode {
+        case .voiceIsolation: "Voice Isolation"
+        case .wideSpectrum: "Wide Spectrum"
+        default: "Standard"
+        }
+    }
+
     private var vocabularySummary: String {
         let count = FlowVocabulary.terms(from: vocabulary).count
         return count == 0 ? "None" : "\(count) term\(count == 1 ? "" : "s")"
@@ -34,6 +46,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { scroller in
             List {
                 sessionSection
                 if let error = session.lastError {
@@ -47,10 +60,18 @@ struct ContentView: View {
                 // would be unreachable. Settings stay compact above it, and
                 // Setup disappears once both checks are green.
                 promptSection
+                    .id(Self.settingsAnchor)
                 if !setupComplete {
                     setupSection
                 }
                 historySection
+            }
+            .onChange(of: session.showSettings) { _, wanted in
+                // The keyboard's gear key: land on the settings, not the top.
+                guard wanted else { return }
+                withAnimation { scroller.scrollTo(Self.settingsAnchor, anchor: .top) }
+                session.showSettings = false
+            }
             }
             .navigationTitle("HopBoard")
             .tint(FlowBrand.accent)
@@ -301,11 +322,21 @@ struct ContentView: View {
                 session.endSession()
                 session.syncLanguagePolicy()
             }
-            Toggle("Noise reduction & auto gain", isOn: $voiceProcessing)
+            Toggle("Voice processing", isOn: $voiceProcessing)
                 .onChange(of: voiceProcessing) { _, _ in
                     // The audio unit is configured when the engine starts.
                     session.endSession()
                 }
+            if voiceProcessing {
+                // Voice processing is what makes iOS offer mic modes for
+                // this app, so the picker belongs right under the switch.
+                Button {
+                    AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+                } label: {
+                    LabeledContent("Mic mode", value: micModeName)
+                }
+                .foregroundStyle(.primary)
+            }
             NavigationLink {
                 VocabularyEditor()
             } label: {
@@ -374,7 +405,7 @@ struct ContentView: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Noise reduction runs your mic through the same front-end as system dictation — cleaner input in noisy rooms and for quiet speech; turn it off to A/B if a recording sounds over-processed. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Voice processing routes the mic through Apple's own voice-processing unit — echo cancellation, noise suppression and automatic gain, nothing hand-rolled — and it is also what makes iOS offer mic modes here: tap Mic mode to pick Voice Isolation (or Wide Spectrum) in Control Center. Turn the switch off for raw capture. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
         }
     }
 

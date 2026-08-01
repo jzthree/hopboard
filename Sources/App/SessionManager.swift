@@ -17,6 +17,9 @@ final class SessionManager: ObservableObject {
     /// When the current transcription started (drives the app's timer).
     @Published private(set) var transcribingSince: Date?
     @Published var lastError: String?
+    /// Set by the keyboard's gear deep link; ContentView scrolls to the
+    /// dictation settings and clears it.
+    @Published var showSettings = false
     @Published private(set) var micPermission = AVAudioApplication.shared.recordPermission
     /// Mirrors FlowStore.tone; the keyboard's tone chip changes it too.
     @Published var tone: FlowTone = .formal {

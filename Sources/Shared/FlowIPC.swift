@@ -17,6 +17,8 @@ enum Flow {
     static let keychainAccessGroup = "5AD7QB9795.io.zhoulab.hopboard.ipc"
     static let keychainService = "io.zhoulab.hopboard.ipc"
     static let startSessionURL = URL(string: "hopboard://session/start")!
+    /// The keyboard's gear: open the app straight to dictation settings.
+    static let settingsURL = URL(string: "hopboard://settings")!
 
     // Darwin notification names are a global namespace — prefix everything.
     static let commandNotification = "io.zhoulab.hopboard.command"

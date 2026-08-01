@@ -14,6 +14,10 @@ struct HopBoardApp: App {
                     if url.host == "session", url.lastPathComponent == "start" {
                         Task { await session.startSession() }
                     }
+                    // hopboard://settings — the keyboard's gear key.
+                    if url.host == "settings" {
+                        session.showSettings = true
+                    }
                 }
                 .task {
                     // Dev hooks for driving the sim without UI taps

@@ -124,12 +124,17 @@ struct KeyboardRootView: View {
                     .background(surface(FlowBrand.accent))
                 }
                 .buttonStyle(KeyStyle())
-                if !model.historyItems.isEmpty {
-                    iconChip("clock.arrow.circlepath", label: "History") {
-                        model.showingHistory = true
+                HStack(spacing: 6) {
+                    if !model.historyItems.isEmpty {
+                        iconChip("clock.arrow.circlepath", label: "History") {
+                            model.showingHistory = true
+                        }
                     }
-                    .padding(.trailing, 8)
+                    iconChip("gearshape", label: "Settings") {
+                        openURL(Flow.settingsURL)
+                    }
                 }
+                .padding(.trailing, 8)
             }
 
         case .loading(let status):
@@ -219,6 +224,11 @@ struct KeyboardRootView: View {
                             iconChip("clock.arrow.circlepath", label: "History") {
                                 model.showingHistory = true
                             }
+                        }
+                        // Model, vocabulary, mic mode — the settings worth
+                        // reaching mid-dictation without hunting for the app.
+                        iconChip("gearshape", label: "Settings") {
+                            openURL(Flow.settingsURL)
                         }
                     }
                 }
