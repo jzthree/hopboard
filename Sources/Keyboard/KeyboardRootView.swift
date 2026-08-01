@@ -87,7 +87,9 @@ struct KeyboardRootView: View {
             .padding(.horizontal, 6)
 
         case .noSession:
-            HStack(spacing: 12) {
+            // Same full-row surface as ready/recording — the primary action
+            // is never a small capsule the thumb has to find.
+            ZStack(alignment: .trailing) {
                 // SwiftUI's environment openURL action — the same sanctioned
                 // route Link uses (iOS 18 killed every selector-based path
                 // to UIApplication from keyboards), but as a plain button
@@ -95,23 +97,36 @@ struct KeyboardRootView: View {
                 Button {
                     openURL(Flow.startSessionURL)
                 } label: {
-                    Label("Start Session", systemImage: "waveform")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(Capsule().fill(.tint))
-                        .foregroundStyle(.white)
+                    HStack(spacing: 12) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 60, height: 60)
+                            .background(Circle().fill(.tint))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Start Session")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Text("Opens HopBoard — then swipe back here")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 8)
+                    .padding(.trailing, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .background(surface(FlowBrand.accent))
                 }
                 .buttonStyle(KeyStyle())
-                if model.historyItems.isEmpty {
-                    Text("Opens HopBoard, then swipe back here.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                } else {
-                    chip("History", icon: "clock.arrow.circlepath") {
+                if !model.historyItems.isEmpty {
+                    iconChip("clock.arrow.circlepath", label: "History") {
                         model.showingHistory = true
                     }
+                    .padding(.trailing, 8)
                 }
             }
 
@@ -146,61 +161,67 @@ struct KeyboardRootView: View {
             .padding(.horizontal, 4)
 
         case .ready:
-            // Eyes-free first: the ENTIRE leading region is the mic's tap
-            // target — the drawn circle is just its center of gravity. The
-            // chips live in a separate trailing cluster, outside the zone.
-            HStack(spacing: 12) {
+            // Eyes-free first: the ENTIRE row is the mic's tap target — one
+            // drawn surface, so the bounds are honest, and the chips ride on
+            // top. Anything that isn't a chip starts dictation, including
+            // the strips above and below them.
+            ZStack(alignment: .trailing) {
                 Button {
                     model.micTapped()
                 } label: {
-                    HStack {
+                    HStack(spacing: 0) {
                         micVisual(recording: false)
                         Spacer(minLength: 0)
                     }
-                    .padding(.leading, 6)
+                    .padding(.leading, 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
+                    .background(surface(FlowBrand.accent))
                 }
                 .buttonStyle(KeyStyle())
                 .accessibilityLabel("Start dictating")
 
-                if model.justInserted {
-                    Label("Inserted", systemImage: "checkmark.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 12)
-                        .frame(height: 38)
-                        .glassPill(tint: .green)
-                } else if let pending = model.pendingResult {
-                    // A dictation that couldn't auto-insert: lingers until
-                    // tapped or a new dictation replaces it.
-                    Button {
-                        model.insertPending()
-                    } label: {
-                        Label("Insert \u{201C}\(pending.text.prefix(10))…\u{201D}",
-                              systemImage: "arrow.down.circle.fill")
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
+                HStack(spacing: 6) {
+                    if model.justInserted {
+                        Label("Inserted", systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
                             .padding(.horizontal, 12)
                             .frame(height: 38)
-                            .glassPill(tint: FlowBrand.accent)
-                    }
-                    .buttonStyle(KeyStyle())
-                } else {
-                    chip(model.languageLabel, icon: "character.bubble") {
-                        model.cycleLanguage()
-                    }
-                    chip(model.tone.shortLabel, icon: "wand.and.stars") {
-                        model.cycleTone()
-                    }
-                    if !model.historyItems.isEmpty {
-                        iconChip("clock.arrow.circlepath", label: "History") {
-                            model.showingHistory = true
+                            .glassPill(tint: .green)
+                    } else if let pending = model.pendingResult {
+                        // A dictation that couldn't auto-insert: lingers
+                        // until tapped or a new dictation replaces it.
+                        Button {
+                            model.insertPending()
+                        } label: {
+                            Label("Insert \u{201C}\(pending.text.prefix(10))…\u{201D}",
+                                  systemImage: "arrow.down.circle.fill")
+                                .font(.caption.weight(.medium))
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .frame(height: 38)
+                                .glassPill(tint: FlowBrand.accent)
+                        }
+                        .buttonStyle(KeyStyle())
+                    } else {
+                        // Text-only language pill: the label IS the icon,
+                        // and every point saved here is mic surface.
+                        textChip(model.languageLabel, label: "Dictation language") {
+                            model.cycleLanguage()
+                        }
+                        chip(model.tone.shortLabel, icon: "wand.and.stars") {
+                            model.cycleTone()
+                        }
+                        if !model.historyItems.isEmpty {
+                            iconChip("clock.arrow.circlepath", label: "History") {
+                                model.showingHistory = true
+                            }
                         }
                     }
                 }
+                .padding(.trailing, 8)
             }
-            .padding(.horizontal, 4)
 
         case .recording:
             // Eyes-free stop: the whole red surface stops and transcribes;
@@ -231,10 +252,11 @@ struct KeyboardRootView: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 10)
-                    .frame(maxHeight: .infinity)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.12)))
+                    .background(surface(.red))
                 }
                 .buttonStyle(KeyStyle())
                 .accessibilityLabel("Stop and transcribe")
@@ -258,6 +280,29 @@ struct KeyboardRootView: View {
             }
             .padding(.horizontal, 4)
         }
+    }
+
+    /// The primary surface shared by no-session, ready and recording: a
+    /// drawn, full-row target so the thumb never has to aim.
+    private func surface(_ tint: Color) -> some View {
+        RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.12))
+    }
+
+    /// Text-only pill (language): narrower than a Label, and the text is
+    /// already the icon.
+    private func textChip(_ text: String, label: String,
+                          action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text)
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 12)
+                .frame(minWidth: 44)
+                .frame(height: 38)
+                .glassPill()
+                .contentShape(Capsule())
+        }
+        .buttonStyle(KeyStyle())
+        .accessibilityLabel("\(label): \(text)")
     }
 
     /// Icon-only chip (Type, History): 44×38, frees width for the mic zone.
@@ -291,10 +336,10 @@ struct KeyboardRootView: View {
     /// the (much larger) tap zone.
     private func micVisual(recording: Bool) -> some View {
         ZStack {
-            if recording { RecordingPulse().frame(width: 56, height: 56) }
+            if recording { RecordingPulse().frame(width: 60, height: 60) }
             Circle()
                 .fill(recording ? Color.red : FlowBrand.accent)
-                .frame(width: 56, height: 56)
+                .frame(width: 60, height: 60)
                 .shadow(color: (recording ? Color.red : FlowBrand.accent).opacity(0.35),
                         radius: recording ? 10 : 6)
             Image(systemName: recording ? "stop.fill" : "mic.fill")
