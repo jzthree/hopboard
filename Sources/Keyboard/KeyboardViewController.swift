@@ -87,6 +87,11 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.documentContextBeforeInput
     }
 
+    /// Secure fields never report context, so a successful insert there is
+    /// invisible to a before/after comparison — this distinguishes them
+    /// from having no focused field at all.
+    var documentHasText: Bool { textDocumentProxy.hasText }
+
     func deleteBackwardOnce() {
         textDocumentProxy.deleteBackward()
     }

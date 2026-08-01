@@ -49,6 +49,13 @@ final class KeyboardModel: ObservableObject {
     /// travels to the app. After that (or once the store confirms), the
     /// display always follows the store — the engine's true state.
     private var optimistic: (state: UIState, at: Date)?
+    /// An insert waiting to be confirmed against the document context.
+    private struct Probe {
+        let id: UUID?
+        let before: String?
+        let at: Date
+    }
+    private var insertProbe: Probe?
     /// Whether shared-keychain IPC works from this process. Probed, not
     /// inferred from hasFullAccess — the probe is the ground truth.
     private var ipcAvailable = false
@@ -188,11 +195,11 @@ final class KeyboardModel: ObservableObject {
 
     /// Insert a history item at the cursor (tapped from the preview strip).
     func insert(_ result: FlowResult) {
-        guard let controller else { return }
-        controller.insert(FlowText.smartJoin(before: controller.textBeforeCursor,
-                                             insertion: result.text))
+        guard insertProbe == nil else { return }
         showingHistory = false
-        flashInserted()
+        // Claim it too: a history item the user just placed shouldn't then
+        // reappear as an unclaimed Insert pill.
+        attemptInsert(result.text, claiming: result.id == store.results.last?.id ? result.id : nil)
     }
 
     func deleteTapped() { controller?.deleteBackwardOnce() }
@@ -230,6 +237,9 @@ final class KeyboardModel: ObservableObject {
         let storedLanguage = store.language
         language = storedLanguage.isEmpty ? "auto" : storedLanguage
         historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
+        // Settle any pending insert first: its verdict decides whether the
+        // result counts as delivered or goes back on offer as a pill.
+        verifyInsertIfNeeded()
         // Consume BEFORE the escape hatches: a slow transcription (>10 s —
         // routine right after an install while the ANE cache rebuilds) used
         // to hit the escape and the consume in the same tick, clearing the
@@ -292,35 +302,76 @@ final class KeyboardModel: ObservableObject {
     }
 
     private func consumeResultIfAny() {
-        // Only ever claim a result while we're actually waiting for one —
-        // marking results consumed while not waiting is how dictations got
-        // silently eaten. Results we didn't ask for just sit in history.
+        // Never mark a result consumed unless it actually landed in the
+        // document. The old code claimed it up front and returned early on
+        // two paths (a result older than this wait; an insert the host
+        // ignored) — both left the text alive only in history with nothing
+        // on the keyboard to offer it.
+        guard insertProbe == nil, let result = store.nextUnconsumedResult() else { return }
+        // Auto-insert is only ever for a dictation THIS keyboard asked for;
+        // anything else waits behind an explicit tap on the Insert pill.
         guard let since = awaitingResultSince,
-              let result = store.nextUnconsumedResult() else { return }
-        store.lastConsumedResultID = result.id
-        guard result.finishedAt >= since.timeIntervalSince1970 - 1 else { return }
+              result.finishedAt >= since.timeIntervalSince1970 - 1 else { return }
+        guard !result.text.isEmpty else {
+            // Nothing was said: acknowledge it so the spinner is released.
+            store.lastConsumedResultID = result.id
+            awaitingResultSince = nil
+            return
+        }
+        // It arrived; stop waiting either way. Success is decided by the
+        // probe below — failure leaves it unconsumed, so the pill offers it.
         awaitingResultSince = nil
-
-        guard !result.text.isEmpty else { return }
-        let text = FlowText.smartJoin(before: controller?.textBeforeCursor,
-                                      insertion: result.text)
-        controller?.insert(text)
-        flashInserted()
+        attemptInsert(result.text, claiming: result.id)
     }
 
     /// The Insert pill's tap: insert at the cursor and retire the result.
     func insertPending() {
-        guard let pending = pendingResult else { return }
-        store.lastConsumedResultID = pending.id
-        pendingResult = nil
-        controller?.insert(FlowText.smartJoin(before: controller?.textBeforeCursor,
-                                              insertion: pending.text))
+        guard let pending = pendingResult, insertProbe == nil else { return }
+        attemptInsert(pending.text, claiming: pending.id)
+    }
+
+    /// Insert, then VERIFY on a later tick. insertText is a one-way message
+    /// to the host app: with no focused field it is a silent no-op, and the
+    /// document context does not update synchronously either — so the check
+    /// cannot be made inline.
+    private func attemptInsert(_ text: String, claiming id: UUID?) {
+        guard let controller else { return }
+        let joined = FlowText.smartJoin(before: controller.textBeforeCursor, insertion: text)
+        guard !joined.isEmpty else { return }
+        insertProbe = Probe(id: id, before: controller.textBeforeCursor, at: Date())
+        controller.insert(joined)
+    }
+
+    private func verifyInsertIfNeeded() {
+        guard let probe = insertProbe, let controller else { return }
+        // Give the host a beat to apply the edit and report back.
+        guard Date().timeIntervalSince(probe.at) >= 0.4 else { return }
+        insertProbe = nil
+        let after = controller.textBeforeCursor
+        // Context changed → definitely landed. Context stayed nil but the
+        // document now has text → a secure field, which never reports
+        // context; also landed. Otherwise the host had nothing focused.
+        let landed = after != probe.before
+            || (after == nil && probe.before == nil && controller.documentHasText)
+        guard landed else {
+            // The host swallowed it. Leave the result unconsumed: the pill
+            // stays, and the text is still one tap from the cursor.
+            return
+        }
+        if let id = probe.id {
+            store.lastConsumedResultID = id
+            pendingResult = nil
+        }
         flashInserted()
     }
 
     private func updatePendingResult() {
-        guard awaitingResultSince == nil,
-              let last = store.results.last, !last.text.isEmpty,
+        // Any unclaimed dictation is offered, whether or not we were the
+        // one waiting for it — that is the promise: text never exists only
+        // in history. Hold off while an insert is being verified so the
+        // pill doesn't flicker between attempt and verdict.
+        guard insertProbe == nil else { return }
+        guard let last = store.results.last, !last.text.isEmpty,
               last.id != store.lastConsumedResultID else {
             if pendingResult != nil { pendingResult = nil }
             return

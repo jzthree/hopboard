@@ -531,24 +531,24 @@ final class SessionManager: ObservableObject {
                                             text: Self.polish(late, tone: tone),
                                             finishedAt: Date().timeIntervalSince1970)
                     self.store.append(result)
-                    if epoch != self.sessionEpoch {
-                        self.store.lastConsumedResultID = result.id
-                    }
                     self.transcripts = self.store.results
                     self.bus.post(Flow.stateNotification)
                 }
             }
             let text = Self.polish(joined, tone: tone)
             guard epoch == self.sessionEpoch else {
-                // The session this belonged to is gone: preserve the text in
-                // the app's history, pre-consumed so the keyboard never
-                // auto-inserts or offers it in a NEW session.
+                // The session this belonged to is gone. Deliver it anyway,
+                // NOT pre-consumed: marking it consumed here left the text
+                // reachable only from history, with nothing on the keyboard
+                // to say it existed. Safety comes from the keyboard's rule
+                // that only a result it is waiting for inserts by itself —
+                // this one arrives as an Insert pill that needs a tap.
                 if !text.isEmpty {
                     let result = FlowResult(id: UUID(), text: text,
                                             finishedAt: Date().timeIntervalSince1970)
                     self.store.append(result)
-                    self.store.lastConsumedResultID = result.id
                     self.transcripts = self.store.results
+                    self.bus.post(Flow.stateNotification)
                 }
                 return
             }
