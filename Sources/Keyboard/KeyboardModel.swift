@@ -147,14 +147,20 @@ final class KeyboardModel: ObservableObject {
         bus.post(Flow.commandNotification)   // nudges the app UI to re-read
     }
 
-    /// Language chip: Auto → EN → 中文. Critical for single-locale engines
-    /// (Apple): dictating English through the Chinese model — or the other
-    /// way round — produces phonetic soup, so the language must be visible
-    /// and switchable without leaving the keyboard.
+    /// Language chip: cycle the user's pinned keyboard languages (config →
+    /// Keyboard languages). Critical for single-locale engines (Apple):
+    /// dictating English through the Chinese model — or the other way
+    /// round — produces phonetic soup, so the language must be visible and
+    /// switchable without leaving the keyboard. Auto is skipped while the
+    /// engine has no detection.
     func cycleLanguage() {
-        let cycle = ["auto", "en", "zh"]
-        let index = cycle.firstIndex(of: language) ?? 0
-        language = cycle[(index + 1) % cycle.count]
+        var cycle = store.favoriteLanguages
+        if !store.autoLanguageAllowed {
+            cycle.removeAll { $0 == "auto" }
+        }
+        if cycle.isEmpty { cycle = ["en"] }
+        let index = cycle.firstIndex(of: language).map { ($0 + 1) % cycle.count } ?? 0
+        language = cycle[index]
         store.language = language
         bus.post(Flow.commandNotification)
     }

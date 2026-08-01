@@ -26,6 +26,14 @@ final class SessionManager: ObservableObject {
     @Published var language: String = "auto" {
         didSet { if store.language != language { store.language = language } }
     }
+    /// Mirrors FlowStore.favoriteLanguages — what the keyboard chip cycles.
+    @Published var favoriteLanguages: [String] = ["auto", "en", "zh"] {
+        didSet {
+            if store.favoriteLanguages != favoriteLanguages {
+                store.favoriteLanguages = favoriteLanguages
+            }
+        }
+    }
 
     let store = FlowStore()
     private let bus = DarwinBus()
@@ -111,6 +119,8 @@ final class SessionManager: ObservableObject {
             ? UserDefaults.standard.string(forKey: Self.languageKey) ?? "auto"
             : store.language
         store.language = language
+        favoriteLanguages = store.favoriteLanguages
+        syncLanguagePolicy()
         refreshSetupState()
         // A fresh launch means any previous session died with the process.
         publish(.idle)
@@ -324,6 +334,22 @@ final class SessionManager: ObservableObject {
     private func currentLanguage() -> String {
         let stored = store.language
         return stored.isEmpty ? language : stored
+    }
+
+    /// The Apple engine has no language detection, so "auto" would silently
+    /// mean "device language" — don't allow it: the chip skips it and a
+    /// pinned "auto" is coerced to the device language. Call on launch and
+    /// whenever the model choice changes.
+    func syncLanguagePolicy() {
+        let noDetection = UserDefaults.standard.string(forKey: Self.modelKey) == "apple"
+        store.autoLanguageAllowed = !noDetection
+        if noDetection, language == "auto" {
+            language = Self.deviceLanguageCode()
+        }
+    }
+
+    static func deviceLanguageCode() -> String {
+        Locale.current.language.languageCode?.identifier ?? "en"
     }
 
     private func transcribeSamples(_ samples: [Float]) async throws -> String {

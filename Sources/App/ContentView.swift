@@ -15,10 +15,15 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     /// Whisper's own language table (name → code), prettified and sorted.
-    private static let languageChoices: [(name: String, code: String)] =
+    static let languageChoices: [(name: String, code: String)] =
         Constants.languages
             .map { (name: $0.key.capitalized, code: $0.value) }
             .sorted { $0.name < $1.name }
+
+    static func languageDisplayName(_ code: String) -> String {
+        if code == "auto" { return "Auto" }
+        return languageChoices.first { $0.code == code }?.name ?? code.uppercased()
+    }
 
     var body: some View {
         NavigationStack {
@@ -220,7 +225,11 @@ struct ContentView: View {
     private var promptSection: some View {
         Section {
             Picker("Language", selection: $session.language) {
-                Text("Auto-detect").tag("auto")
+                // The Apple engine has no detection — Auto would silently
+                // mean "device language", so it isn't offered there.
+                if modelChoice != "apple" {
+                    Text("Auto-detect").tag("auto")
+                }
                 ForEach(Self.languageChoices, id: \.code) { choice in
                     Text(choice.name).tag(choice.code)
                 }
@@ -283,6 +292,15 @@ struct ContentView: View {
             .onChange(of: modelChoice) { _, _ in
                 // The new model loads on the next session start.
                 session.endSession()
+                session.syncLanguagePolicy()
+            }
+            NavigationLink {
+                KeyboardLanguagesEditor()
+            } label: {
+                LabeledContent("Keyboard languages",
+                               value: session.favoriteLanguages
+                                   .map { Self.languageDisplayName($0) }
+                                   .joined(separator: " · "))
             }
             if modelChoice == "gemma" || modelChoice == "litert" {
                 if modelChoice == "litert" {
@@ -615,6 +633,54 @@ struct GemmaPromptEditor: View {
         .onAppear {
             let saved = custom.trimmingCharacters(in: .whitespacesAndNewlines)
             text = saved.isEmpty ? defaultInstruction : saved
+        }
+    }
+}
+
+/// Pick the languages the keyboard's chip cycles through. Order is
+/// canonical (Auto first, then A→Z) so the cycle is predictable.
+struct KeyboardLanguagesEditor: View {
+    @EnvironmentObject private var session: SessionManager
+
+    private var selection: Set<String> { Set(session.favoriteLanguages) }
+
+    var body: some View {
+        List {
+            Section {
+                row(code: "auto", name: "Auto-detect")
+                ForEach(ContentView.languageChoices, id: \.code) { choice in
+                    row(code: choice.code, name: choice.name)
+                }
+            } footer: {
+                Text("The keyboard's language chip cycles through these. Auto is skipped while the Apple model is selected — it has no detection, so a concrete language must be pinned.")
+            }
+        }
+        .navigationTitle("Keyboard Languages")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func row(code: String, name: String) -> some View {
+        Button {
+            var updated = selection
+            if updated.contains(code) {
+                // Never empty: the chip needs something to cycle to.
+                guard updated.count > 1 else { return }
+                updated.remove(code)
+            } else {
+                updated.insert(code)
+            }
+            let ordered = ["auto"] + ContentView.languageChoices.map(\.code)
+            session.favoriteLanguages = ordered.filter { updated.contains($0) }
+        } label: {
+            HStack {
+                Text(name)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if selection.contains(code) {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
+            }
         }
     }
 }

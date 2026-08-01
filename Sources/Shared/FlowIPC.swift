@@ -131,6 +131,8 @@ final class FlowStore {
         static let probe = "flow.probe"
         static let tone = "flow.tone"
         static let language = "flow.sharedLanguage"
+        static let favoriteLanguages = "flow.favLanguages"
+        static let autoLanguageAllowed = "flow.autoLangAllowed"
     }
 
     init(backend: FlowBackend = KeychainBackend()) {
@@ -281,6 +283,24 @@ final class FlowStore {
     var language: String {
         get { string(Key.language) ?? "" }
         set { setString(newValue, Key.language) }
+    }
+
+    /// The languages the keyboard's chip cycles through — user-pinned in
+    /// the app's config, stored comma-joined.
+    var favoriteLanguages: [String] {
+        get {
+            let stored = string(Key.favoriteLanguages) ?? ""
+            return stored.isEmpty ? ["auto", "en", "zh"]
+                                  : stored.split(separator: ",").map(String.init)
+        }
+        set { setString(newValue.joined(separator: ","), Key.favoriteLanguages) }
+    }
+
+    /// False while a no-detection engine (Apple) is selected: "auto" would
+    /// silently mean "device language", so the chip must skip it.
+    var autoLanguageAllowed: Bool {
+        get { string(Key.autoLanguageAllowed) != "false" }
+        set { setString(newValue ? "true" : "false", Key.autoLanguageAllowed) }
     }
 
     // MARK: onboarding breadcrumbs (keyboard writes, app reads)

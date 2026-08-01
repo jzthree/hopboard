@@ -105,6 +105,17 @@ final class FlowIPCTests: XCTestCase {
                        "Yes , I mean it")
     }
 
+    func testFavoriteLanguages() {
+        XCTAssertEqual(store.favoriteLanguages, ["auto", "en", "zh"])
+        store.favoriteLanguages = ["en", "zh", "ja"]
+        XCTAssertEqual(store.favoriteLanguages, ["en", "zh", "ja"])
+        XCTAssertTrue(store.autoLanguageAllowed)
+        store.autoLanguageAllowed = false
+        XCTAssertFalse(store.autoLanguageAllowed)
+        store.autoLanguageAllowed = true
+        XCTAssertTrue(store.autoLanguageAllowed)
+    }
+
     func testSmartJoin() {
         XCTAssertEqual(FlowText.smartJoin(before: nil, insertion: "Hello"), "Hello")
         XCTAssertEqual(FlowText.smartJoin(before: "", insertion: "Hello"), "Hello")
