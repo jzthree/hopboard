@@ -10,6 +10,7 @@ struct ContentView: View {
     @AppStorage(SessionManager.gemmaCustomInstructionKey) private var gemmaCustomInstruction = ""
     @AppStorage(SessionManager.litertVariantKey) private var litertVariant = "e2b"
     @AppStorage(SessionManager.voiceProcessingKey) private var voiceProcessing = true
+    @AppStorage(SessionManager.vocabularyKey) private var vocabulary = ""
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
@@ -20,6 +21,11 @@ struct ContentView: View {
         Constants.languages
             .map { (name: $0.key.capitalized, code: $0.value) }
             .sorted { $0.name < $1.name }
+
+    private var vocabularySummary: String {
+        let count = FlowVocabulary.terms(from: vocabulary).count
+        return count == 0 ? "None" : "\(count) term\(count == 1 ? "" : "s")"
+    }
 
     static func languageDisplayName(_ code: String) -> String {
         if code == "auto" { return "Auto" }
@@ -301,6 +307,11 @@ struct ContentView: View {
                     session.endSession()
                 }
             NavigationLink {
+                VocabularyEditor()
+            } label: {
+                LabeledContent("Vocabulary", value: vocabularySummary)
+            }
+            NavigationLink {
                 KeyboardLanguagesEditor()
             } label: {
                 LabeledContent("Keyboard languages",
@@ -348,7 +359,8 @@ struct ContentView: View {
                 NavigationLink {
                     GemmaPromptEditor(
                         defaultInstruction: GemmaEngine.instruction(
-                            language: session.language, tone: session.tone),
+                            language: session.language, tone: session.tone,
+                            vocabulary: FlowVocabulary.current()),
                         // LiteRT applies Gemma's template inside the runtime,
                         // so the llama.cpp assembly preview would be a lie.
                         showsAssembledPrompt: modelChoice == "gemma")
@@ -697,5 +709,57 @@ struct KeyboardLanguagesEditor: View {
                 }
             }
         }
+    }
+}
+
+/// Names and jargon, spelled the way you want them. Deliberately NOT a
+/// replacement list: you can't predict what a model will hear, so you
+/// write only the correct term and matching handles the rest — sound-alike
+/// spellings in English, homophones by pinyin in Chinese.
+struct VocabularyEditor: View {
+    @AppStorage(SessionManager.vocabularyKey) private var vocabulary = ""
+    @State private var draft = ""
+    @State private var probe = ""
+
+    private var terms: [String] { FlowVocabulary.terms(from: draft) }
+
+    var body: some View {
+        List {
+            Section {
+                TextEditor(text: $draft)
+                    .frame(minHeight: 160)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .onChange(of: draft) { _, new in vocabulary = new }
+            } header: {
+                Text("One per line · \(terms.count) term\(terms.count == 1 ? "" : "s")")
+            } footer: {
+                Text("Write each name the way it should appear — HopBoard, Anthropic, 张伟. Dictations are matched against these by sound, so \u{201C}hop board\u{201D} and \u{201C}hop bored\u{201D} both become HopBoard, and a Chinese name written with the wrong character is fixed when the pinyin matches. Applies to every engine; Gemma also receives the list while it transcribes.")
+            }
+
+            Section {
+                TextField("Paste a dictation to check", text: $probe, axis: .vertical)
+                    .lineLimit(1...4)
+                    .autocorrectionDisabled()
+                if !probe.isEmpty {
+                    let corrected = FlowVocabulary.apply(probe, terms: terms)
+                    Text(corrected)
+                        .font(.callout)
+                        .foregroundStyle(corrected == probe ? .secondary : .primary)
+                    if corrected == probe {
+                        Text("No change — nothing matched closely enough.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            } header: {
+                Text("Try it")
+            } footer: {
+                Text("Paste something that came out wrong to see whether your list would have fixed it.")
+            }
+        }
+        .navigationTitle("Vocabulary")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { draft = vocabulary }
     }
 }

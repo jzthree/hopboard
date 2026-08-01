@@ -139,3 +139,52 @@ final class FlowIPCTests: XCTestCase {
         XCTAssertEqual(FlowText.smartJoin(before: "word", insertion: "   "), "")
     }
 }
+
+final class FlowVocabularyTests: XCTestCase {
+    private let terms = ["HopBoard", "Anthropic", "张伟", "Kubernetes"]
+
+    func testCasingAndSplitting() {
+        // The three ways a model renders one written name.
+        XCTAssertEqual(FlowVocabulary.apply("I opened hop board today.", terms: terms),
+                       "I opened HopBoard today.")
+        XCTAssertEqual(FlowVocabulary.apply("hopboard is running.", terms: terms),
+                       "HopBoard is running.")
+        XCTAssertEqual(FlowVocabulary.apply("Ship HOPBOARD now", terms: terms),
+                       "Ship HopBoard now")
+    }
+
+    func testMishearing() {
+        XCTAssertEqual(FlowVocabulary.apply("the hop bored build", terms: terms),
+                       "the HopBoard build")
+        XCTAssertEqual(FlowVocabulary.apply("works at anthropik", terms: terms),
+                       "works at Anthropic")
+        XCTAssertEqual(FlowVocabulary.apply("deploy to kubernetties", terms: terms),
+                       "deploy to Kubernetes")
+    }
+
+    func testChineseHomophones() {
+        // Same pinyin, wrong glyph — how Chinese recognition actually fails.
+        XCTAssertEqual(FlowVocabulary.apply("这是章伟的项目", terms: terms),
+                       "这是张伟的项目")
+        XCTAssertEqual(FlowVocabulary.apply("张伟已经完成", terms: terms),
+                       "张伟已经完成")
+    }
+
+    func testLeavesOrdinaryTextAlone() {
+        let text = "The board meeting is on Monday and the hope is high."
+        XCTAssertEqual(FlowVocabulary.apply(text, terms: terms), text)
+        XCTAssertEqual(FlowVocabulary.apply("我们在开会", terms: terms), "我们在开会")
+        // No terms configured: never touch the transcript.
+        XCTAssertEqual(FlowVocabulary.apply("hop board", terms: []), "hop board")
+    }
+
+    func testTermParsing() {
+        XCTAssertEqual(FlowVocabulary.terms(from: "HopBoard\n 张伟 \n\nAnthropic, Claude\nx"),
+                       ["HopBoard", "张伟", "Anthropic", "Claude"])
+    }
+
+    func testPinyin() {
+        XCTAssertEqual(FlowVocabulary.pinyin("张伟"), FlowVocabulary.pinyin("章伟"))
+        XCTAssertNotEqual(FlowVocabulary.pinyin("张伟"), FlowVocabulary.pinyin("李明"))
+    }
+}

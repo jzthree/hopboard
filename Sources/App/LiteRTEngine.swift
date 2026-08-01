@@ -183,7 +183,8 @@ actor LiteRTEngine {
         defer { live.set(nil) }
 
         let instruction = customInstruction
-            ?? GemmaEngine.instruction(language: language, tone: tone)
+            ?? GemmaEngine.instruction(language: language, tone: tone,
+                                       vocabulary: FlowVocabulary.current())
         let wav = Self.wavData(from: samples)
         diag.set("sendMessage running (\(samples.count) samples)…")
         let response = try await conversation.sendMessage(

@@ -79,6 +79,15 @@ final class SessionManager: ObservableObject {
     static let gemmaCustomInstructionKey = "flow.gemmaCustomInstruction"
     static let litertVariantKey = "flow.litertVariant"
     static let voiceProcessingKey = "flow.voiceProcessing"
+    static let vocabularyKey = FlowVocabulary.defaultsKey
+
+    /// Everything that happens to a transcript between the engine and the
+    /// cursor. Vocabulary goes LAST so its spelling survives tone (very
+    /// casual lowercases, which would undo "HopBoard").
+    static func polish(_ raw: String, tone: FlowTone) -> String {
+        let styled = tone.apply(to: FlowText.normalizeCJKPunctuation(raw))
+        return FlowVocabulary.apply(styled, terms: FlowVocabulary.current())
+    }
 
     static func litertVariant() -> String {
         UserDefaults.standard.string(forKey: litertVariantKey) ?? "e2b"
@@ -519,7 +528,7 @@ final class SessionManager: ObservableObject {
                     let late = await work.value
                     guard let self, !late.isEmpty else { return }
                     let result = FlowResult(id: UUID(),
-                                            text: tone.apply(to: FlowText.normalizeCJKPunctuation(late)),
+                                            text: Self.polish(late, tone: tone),
                                             finishedAt: Date().timeIntervalSince1970)
                     self.store.append(result)
                     if epoch != self.sessionEpoch {
@@ -529,7 +538,7 @@ final class SessionManager: ObservableObject {
                     self.bus.post(Flow.stateNotification)
                 }
             }
-            let text = tone.apply(to: FlowText.normalizeCJKPunctuation(joined))
+            let text = Self.polish(joined, tone: tone)
             guard epoch == self.sessionEpoch else {
                 // The session this belonged to is gone: preserve the text in
                 // the app's history, pre-consumed so the keyboard never

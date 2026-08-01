@@ -176,7 +176,21 @@ actor GemmaEngine {
     /// Instruction per language/tone — in the language of the dictation:
     /// Mac validation showed Chinese punctuation only lands when the
     /// instruction itself is Chinese.
-    static func instruction(language: String?, tone: FlowTone) -> String {
+    /// Vocabulary is appended for the LLM engines because they can act on
+    /// it during decoding — unlike Whisper, whose prompt path is broken.
+    /// The post-hoc fuzzy pass still runs on top for whatever slips through.
+    static func instruction(language: String?, tone: FlowTone,
+                            vocabulary: [String] = []) -> String {
+        let base = coreInstruction(language: language, tone: tone)
+        guard !vocabulary.isEmpty else { return base }
+        let list = vocabulary.prefix(40).joined(separator: "、")
+        return language == "zh"
+            ? base + "以下词汇可能出现，请使用这些写法：" + list + "。"
+            : base + " These terms may occur — use exactly these spellings: "
+                + vocabulary.prefix(40).joined(separator: ", ") + "."
+    }
+
+    private static func coreInstruction(language: String?, tone: FlowTone) -> String {
         if language == "zh" {
             let base = "请逐字转写这段音频，使用标点符号。"
             let style: String
@@ -230,7 +244,9 @@ actor GemmaEngine {
         llama_memory_clear(llama_get_memory(context), true)
 
         let prompt = Self.assemblePrompt(
-            instruction: customInstruction ?? Self.instruction(language: language, tone: tone),
+            instruction: customInstruction
+                ?? Self.instruction(language: language, tone: tone,
+                                    vocabulary: FlowVocabulary.current()),
             thinking: thinking)
 
         guard let bitmap = samples.withUnsafeBufferPointer({
