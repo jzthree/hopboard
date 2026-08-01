@@ -1,6 +1,7 @@
 import AVFoundation
 import SwiftUI
 import UIKit
+import WhisperKit   // Constants.languages: the supported-language filter
 
 /// The app-side brain: owns the recorder and the model, mirrors every state
 /// change into the App Group store, and executes commands the keyboard sends.
@@ -119,7 +120,10 @@ final class SessionManager: ObservableObject {
             ? UserDefaults.standard.string(forKey: Self.languageKey) ?? "auto"
             : store.language
         store.language = language
-        favoriteLanguages = store.favoriteLanguages
+        favoriteLanguages = store.favoriteLanguagesCustomized
+            ? store.favoriteLanguages
+            : Self.systemLanguages()
+        store.favoriteLanguages = favoriteLanguages
         syncLanguagePolicy()
         refreshSetupState()
         // A fresh launch means any previous session died with the process.
@@ -156,8 +160,27 @@ final class SessionManager: ObservableObject {
         micPermission = AVAudioApplication.shared.recordPermission
         let keyboards = UserDefaults.standard.array(forKey: "AppleKeyboards") as? [String] ?? []
         keyboardEnabled = keyboards.contains { $0.contains("io.zhoulab.hopboard.keyboard") }
+        // Also runs when returning from Settings: a keyboard added there
+        // shows up in the chip immediately (unless the list was customized).
+        if !store.favoriteLanguagesCustomized {
+            let derived = Self.systemLanguages()
+            if favoriteLanguages != derived { favoriteLanguages = derived }
+        }
         objectWillChange.send()
     }
+
+    /// Explicit user edit: stop tracking iOS's list from here on.
+    func setFavoriteLanguages(_ codes: [String]) {
+        favoriteLanguages = codes
+        store.favoriteLanguagesCustomized = true
+    }
+
+    func resetFavoriteLanguagesToSystem() {
+        store.favoriteLanguagesCustomized = false
+        favoriteLanguages = Self.systemLanguages()
+    }
+
+    var favoriteLanguagesAreCustom: Bool { store.favoriteLanguagesCustomized }
 
     // MARK: session lifecycle
 
@@ -350,6 +373,33 @@ final class SessionManager: ObservableObject {
 
     static func deviceLanguageCode() -> String {
         Locale.current.language.languageCode?.identifier ?? "en"
+    }
+
+    /// The chip's default cycle: the languages iOS already knows you use —
+    /// Settings ▸ General ▸ Language & Region (preferred languages) plus
+    /// the keyboards you've enabled. Re-derived on every launch until the
+    /// user edits the checklist, so adding a keyboard in iOS flows through
+    /// without touching HopBoard. Whisper's table is the filter, so codes
+    /// no engine understands never reach the chip.
+    static func systemLanguages() -> [String] {
+        let supported = Set(Constants.languages.values)
+        var codes: [String] = []
+        func add(_ code: String?) {
+            guard let code, supported.contains(code), !codes.contains(code) else { return }
+            codes.append(code)
+        }
+        for tag in Locale.preferredLanguages {
+            add(FlowText.whisperCode(fromLanguageTag: tag))
+        }
+        let keyboards = UserDefaults.standard.array(forKey: "AppleKeyboards") as? [String] ?? []
+        for entry in keyboards {
+            add(FlowText.whisperCode(fromLanguageTag: entry))
+        }
+        add(deviceLanguageCode())
+        if codes.isEmpty { codes = ["en"] }
+        // Auto leads when it's meaningful; the Apple engine's policy strips
+        // it from the chip separately.
+        return ["auto"] + codes
     }
 
     private func transcribeSamples(_ samples: [Float]) async throws -> String {

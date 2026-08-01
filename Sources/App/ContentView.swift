@@ -651,8 +651,17 @@ struct KeyboardLanguagesEditor: View {
                 ForEach(ContentView.languageChoices, id: \.code) { choice in
                     row(code: choice.code, name: choice.name)
                 }
+            } header: {
+                Text(session.favoriteLanguagesAreCustom ? "Custom" : "From your iOS languages & keyboards")
             } footer: {
-                Text("The keyboard's language chip cycles through these. Auto is skipped while the Apple model is selected — it has no detection, so a concrete language must be pinned.")
+                Text("The keyboard's language chip cycles through these. They follow the languages and keyboards you've added in iOS Settings until you change them here. Auto is skipped while the Apple model is selected — it has no detection, so a concrete language must be pinned.")
+            }
+            if session.favoriteLanguagesAreCustom {
+                Section {
+                    Button("Follow iOS languages & keyboards") {
+                        session.resetFavoriteLanguagesToSystem()
+                    }
+                }
             }
         }
         .navigationTitle("Keyboard Languages")
@@ -670,7 +679,7 @@ struct KeyboardLanguagesEditor: View {
                 updated.insert(code)
             }
             let ordered = ["auto"] + ContentView.languageChoices.map(\.code)
-            session.favoriteLanguages = ordered.filter { updated.contains($0) }
+            session.setFavoriteLanguages(ordered.filter { updated.contains($0) })
         } label: {
             HStack {
                 Text(name)

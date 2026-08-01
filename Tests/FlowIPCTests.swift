@@ -105,6 +105,18 @@ final class FlowIPCTests: XCTestCase {
                        "Yes , I mean it")
     }
 
+    func testWhisperCodeFromLanguageTag() {
+        // iOS preferred-language tags and AppleKeyboards entries.
+        XCTAssertEqual(FlowText.whisperCode(fromLanguageTag: "en-US"), "en")
+        XCTAssertEqual(FlowText.whisperCode(fromLanguageTag: "zh-Hans-CN"), "zh")
+        XCTAssertEqual(FlowText.whisperCode(fromLanguageTag: "zh_Hans-Pinyin@sw=Pinyin10"), "zh")
+        XCTAssertEqual(FlowText.whisperCode(fromLanguageTag: "yue-CN"), "yue")
+        // Non-language entries are rejected, including our own keyboard id.
+        XCTAssertNil(FlowText.whisperCode(fromLanguageTag: "emoji"))
+        XCTAssertNil(FlowText.whisperCode(fromLanguageTag: "Emoji@sw=Emoji"))
+        XCTAssertNil(FlowText.whisperCode(fromLanguageTag: ""))
+    }
+
     func testFavoriteLanguages() {
         XCTAssertEqual(store.favoriteLanguages, ["auto", "en", "zh"])
         store.favoriteLanguages = ["en", "zh", "ja"]

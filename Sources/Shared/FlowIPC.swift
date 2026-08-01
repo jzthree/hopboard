@@ -132,6 +132,7 @@ final class FlowStore {
         static let tone = "flow.tone"
         static let language = "flow.sharedLanguage"
         static let favoriteLanguages = "flow.favLanguages"
+        static let favoriteLanguagesCustomized = "flow.favLangCustom"
         static let autoLanguageAllowed = "flow.autoLangAllowed"
     }
 
@@ -303,6 +304,14 @@ final class FlowStore {
         set { setString(newValue ? "true" : "false", Key.autoLanguageAllowed) }
     }
 
+    /// True once the user edits the Keyboard Languages checklist. Until
+    /// then the app re-derives the list from iOS's languages & keyboards
+    /// on every launch, so system changes keep flowing through.
+    var favoriteLanguagesCustomized: Bool {
+        get { string(Key.favoriteLanguagesCustomized) == "true" }
+        set { setString(newValue ? "true" : "false", Key.favoriteLanguagesCustomized) }
+    }
+
     // MARK: onboarding breadcrumbs (keyboard writes, app reads)
 
     var keyboardSeen: Bool {
@@ -370,6 +379,17 @@ enum FlowText {
             result.append(ch)
         }
         return String(result)
+    }
+
+    /// Whisper language code from a BCP-47 tag or an AppleKeyboards entry
+    /// ("en-US", "zh_Hans-Pinyin@sw=Pinyin10", "yue-CN") — nil for
+    /// non-language entries ("emoji", keyboard bundle ids). Primary
+    /// subtags are 2–3 letters; anything longer wasn't a language tag.
+    static func whisperCode(fromLanguageTag tag: String) -> String? {
+        let base = tag.split(separator: "@").first.map(String.init) ?? tag
+        let letters = base.prefix { $0.isLetter }
+        guard (2...3).contains(letters.count) else { return nil }
+        return letters.lowercased()
     }
 
     /// Joins dictated text onto what precedes the cursor: a leading space
