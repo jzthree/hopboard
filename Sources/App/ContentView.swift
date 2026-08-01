@@ -4,7 +4,6 @@ import WhisperKit
 struct ContentView: View {
     @EnvironmentObject private var session: SessionManager
     @State private var copiedResultID: UUID?
-    @AppStorage(SessionManager.languageKey) private var languageCode = "auto"
     @AppStorage(SessionManager.modelKey) private var modelChoice = "turbo"
     @AppStorage(SessionManager.gemmaThinkingKey) private var gemmaThinking = false
     @AppStorage(SessionManager.gemmaThinkingBudgetKey) private var gemmaThinkingBudget = 48
@@ -220,7 +219,7 @@ struct ContentView: View {
 
     private var promptSection: some View {
         Section {
-            Picker("Language", selection: $languageCode) {
+            Picker("Language", selection: $session.language) {
                 Text("Auto-detect").tag("auto")
                 ForEach(Self.languageChoices, id: \.code) { choice in
                     Text(choice.name).tag(choice.code)
@@ -325,7 +324,7 @@ struct ContentView: View {
                 NavigationLink {
                     GemmaPromptEditor(
                         defaultInstruction: GemmaEngine.instruction(
-                            language: languageCode, tone: session.tone),
+                            language: session.language, tone: session.tone),
                         // LiteRT applies Gemma's template inside the runtime,
                         // so the llama.cpp assembly preview would be a lie.
                         showsAssembledPrompt: modelChoice == "gemma")
@@ -339,7 +338,7 @@ struct ContentView: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
         }
     }
 

@@ -19,6 +19,7 @@ final class KeyboardModel: ObservableObject {
     @Published private(set) var showsGlobe = true
     @Published private(set) var justInserted = false
     @Published private(set) var tone: FlowTone = .formal
+    @Published private(set) var language: String = "auto"
     /// Recent non-empty dictations, newest first — browsable from the
     /// keyboard so a dictation that landed nowhere (focus lost, keyboard
     /// dismissed mid-transcribe) is recoverable with a preview.
@@ -146,6 +147,27 @@ final class KeyboardModel: ObservableObject {
         bus.post(Flow.commandNotification)   // nudges the app UI to re-read
     }
 
+    /// Language chip: Auto → EN → 中文. Critical for single-locale engines
+    /// (Apple): dictating English through the Chinese model — or the other
+    /// way round — produces phonetic soup, so the language must be visible
+    /// and switchable without leaving the keyboard.
+    func cycleLanguage() {
+        let cycle = ["auto", "en", "zh"]
+        let index = cycle.firstIndex(of: language) ?? 0
+        language = cycle[(index + 1) % cycle.count]
+        store.language = language
+        bus.post(Flow.commandNotification)
+    }
+
+    var languageLabel: String {
+        switch language {
+        case "auto": "Auto"
+        case "en": "EN"
+        case "zh": "中文"
+        default: language.uppercased()
+        }
+    }
+
     /// Insert a history item at the cursor (tapped from the preview strip).
     func insert(_ result: FlowResult) {
         guard let controller else { return }
@@ -187,6 +209,8 @@ final class KeyboardModel: ObservableObject {
             return
         }
         tone = store.tone
+        let storedLanguage = store.language
+        language = storedLanguage.isEmpty ? "auto" : storedLanguage
         historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
         // Consume BEFORE the escape hatches: a slow transcription (>10 s —
         // routine right after an install while the ANE cache rebuilds) used

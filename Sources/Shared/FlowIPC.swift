@@ -130,6 +130,7 @@ final class FlowStore {
         static let modelStatus = "flow.modelStatus"
         static let probe = "flow.probe"
         static let tone = "flow.tone"
+        static let language = "flow.sharedLanguage"
     }
 
     init(backend: FlowBackend = KeychainBackend()) {
@@ -271,6 +272,15 @@ final class FlowStore {
     var tone: FlowTone {
         get { string(Key.tone).flatMap(FlowTone.init(rawValue:)) ?? .formal }
         set { setString(newValue.rawValue, Key.tone) }
+    }
+
+    /// Dictation language: whisper code or "auto". The keyboard's language
+    /// chip changes it too — critical for single-locale engines (Apple),
+    /// where dictating English through the Chinese model produces garbage.
+    /// "" = never set; the app seeds it from its old UserDefaults value.
+    var language: String {
+        get { string(Key.language) ?? "" }
+        set { setString(newValue, Key.language) }
     }
 
     // MARK: onboarding breadcrumbs (keyboard writes, app reads)

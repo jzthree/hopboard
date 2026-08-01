@@ -187,6 +187,9 @@ struct KeyboardRootView: View {
                     }
                     .buttonStyle(KeyStyle())
                 } else {
+                    chip(model.languageLabel, icon: "character.bubble") {
+                        model.cycleLanguage()
+                    }
                     chip(model.tone.shortLabel, icon: "wand.and.stars") {
                         model.cycleTone()
                     }

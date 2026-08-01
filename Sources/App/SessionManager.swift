@@ -21,6 +21,11 @@ final class SessionManager: ObservableObject {
     @Published var tone: FlowTone = .formal {
         didSet { if store.tone != tone { store.tone = tone } }
     }
+    /// Mirrors FlowStore.language ("auto" or a whisper code); the
+    /// keyboard's language chip changes it too.
+    @Published var language: String = "auto" {
+        didSet { if store.language != language { store.language = language } }
+    }
 
     let store = FlowStore()
     private let bus = DarwinBus()
@@ -100,6 +105,12 @@ final class SessionManager: ObservableObject {
     init() {
         transcripts = store.results
         tone = store.tone
+        // Migrate the pre-chip UserDefaults language into the shared store
+        // (didSet doesn't fire during init, so seed the store explicitly).
+        language = store.language.isEmpty
+            ? UserDefaults.standard.string(forKey: Self.languageKey) ?? "auto"
+            : store.language
+        store.language = language
         refreshSetupState()
         // A fresh launch means any previous session died with the process.
         publish(.idle)
@@ -190,7 +201,7 @@ final class SessionManager: ObservableObject {
             }
             self.apple = apple
             apple.abortFlag.set(false)
-            await apple.load(language: UserDefaults.standard.string(forKey: Self.languageKey))
+            await apple.load(language: currentLanguage())
             guard epoch == sessionEpoch else { return }
             guard await apple.isReady else {
                 publish(.idle)
@@ -307,8 +318,16 @@ final class SessionManager: ObservableObject {
 
     /// One entry point for every chunk of audio, routed to whichever
     /// engine the session was started with.
+    /// Read the keychain-backed value LIVE, not the @Published mirror: the
+    /// keyboard's chip changes it while the app is backgrounded, and every
+    /// window must honor the latest choice.
+    private func currentLanguage() -> String {
+        let stored = store.language
+        return stored.isEmpty ? language : stored
+    }
+
     private func transcribeSamples(_ samples: [Float]) async throws -> String {
-        let language = UserDefaults.standard.string(forKey: Self.languageKey)
+        let language: String? = currentLanguage()
         switch UserDefaults.standard.string(forKey: Self.modelKey) {
         case "gemma" where gemma != nil:
             let gemma = gemma!
@@ -463,9 +482,11 @@ final class SessionManager: ObservableObject {
     // MARK: keyboard commands
 
     private func drainCommands() {
-        // The keyboard's tone chip writes straight to the store and pings
-        // this notification; keep the app UI in sync even with no command.
+        // The keyboard's chips write straight to the store and ping this
+        // notification; keep the app UI in sync even with no command.
         if tone != store.tone { tone = store.tone }
+        let storedLanguage = store.language
+        if !storedLanguage.isEmpty, language != storedLanguage { language = storedLanguage }
         // Process every queued command in order — a fast start+stop pair
         // becomes a legitimate (short, likely empty) dictation instead of a
         // lost start and a stuck keyboard.

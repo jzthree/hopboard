@@ -47,41 +47,7 @@ actor AppleSpeechEngine {
         }
         do {
             diag.set("resolving locale \(localeID)…")
-            let supported = await SpeechTranscriber.supportedLocales
-            guard supported.contains(where: { $0.identifier(.bcp47) == localeID }) else {
-                throw NSError(domain: "AppleSpeech", code: 1, userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "Apple's transcriber does not support \(localeID) — pin a supported language."])
-            }
-            let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
-            let installed = await SpeechTranscriber.installedLocales
-            if !installed.contains(where: { $0.identifier(.bcp47) == localeID }) {
-                // Each app gets a small quota of reserved locales; switching
-                // language without releasing the old reservation makes the
-                // install request fail. Free everything but the target.
-                for reserved in await AssetInventory.reservedLocales
-                where reserved.identifier(.bcp47) != localeID {
-                    _ = await AssetInventory.release(reservedLocale: reserved)
-                }
-                diag.set("downloading system model for \(localeID)…")
-                if let request = try await AssetInventory.assetInstallationRequest(
-                    supporting: [transcriber]) {
-                    let progress = request.progress
-                    let poll = Task { [onState] in
-                        while !Task.isCancelled {
-                            onState(.downloading(progress.fractionCompleted))
-                            try? await Task.sleep(for: .milliseconds(300))
-                        }
-                    }
-                    do {
-                        try await request.downloadAndInstall()
-                        poll.cancel()
-                    } catch {
-                        poll.cancel()
-                        throw error
-                    }
-                }
-            }
+            try await ensureAssets(locale: locale, localeID: localeID, reportProgress: true)
             onState(.loading)
             isReady = true
             readyLocaleID = localeID
@@ -91,6 +57,50 @@ actor AppleSpeechEngine {
             isReady = false
             readyLocaleID = nil
             onState(.failed(error.localizedDescription))
+        }
+    }
+
+    /// Verify support and install the system asset for a locale. Shared by
+    /// session start (with download progress) and mid-session language
+    /// switches from the keyboard chip (silent — no UI state flips).
+    private func ensureAssets(locale: Locale, localeID: String,
+                              reportProgress: Bool) async throws {
+        let supported = await SpeechTranscriber.supportedLocales
+        guard supported.contains(where: { $0.identifier(.bcp47) == localeID }) else {
+            throw NSError(domain: "AppleSpeech", code: 1, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Apple's transcriber does not support \(localeID) — pin a supported language."])
+        }
+        let installed = await SpeechTranscriber.installedLocales
+        guard !installed.contains(where: { $0.identifier(.bcp47) == localeID }) else { return }
+        // Each app gets a small quota of reserved locales; switching
+        // language without releasing the old reservation makes the install
+        // request fail. Free everything but the target.
+        for reserved in await AssetInventory.reservedLocales
+        where reserved.identifier(.bcp47) != localeID {
+            _ = await AssetInventory.release(reservedLocale: reserved)
+        }
+        diag.set("downloading system model for \(localeID)…")
+        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
+        guard let request = try await AssetInventory.assetInstallationRequest(
+            supporting: [transcriber]) else { return }
+        if reportProgress {
+            let progress = request.progress
+            let poll = Task { [onState] in
+                while !Task.isCancelled {
+                    onState(.downloading(progress.fractionCompleted))
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
+            }
+            do {
+                try await request.downloadAndInstall()
+                poll.cancel()
+            } catch {
+                poll.cancel()
+                throw error
+            }
+        } else {
+            try await request.downloadAndInstall()
         }
     }
 
@@ -121,6 +131,16 @@ actor AppleSpeechEngine {
         }
 
         let locale = Self.locale(for: language)
+        let localeID = locale.identifier(.bcp47)
+        if localeID != readyLocaleID {
+            // The keyboard's language chip switched mid-session — make the
+            // new locale's asset present before analyzing (instant when the
+            // system already has it; otherwise one window waits on the
+            // download and the diag says so).
+            diag.set("switching to \(localeID)…")
+            try await ensureAssets(locale: locale, localeID: localeID, reportProgress: false)
+            readyLocaleID = localeID
+        }
         // Modules are cheap to create; the heavy lifting is the system
         // asset, which is cached. One analyzer per window keeps every
         // window independent — the same isolation the other engines get
