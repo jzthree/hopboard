@@ -97,6 +97,12 @@ final class FlowIPCTests: XCTestCase {
         // Mixed: convert only after CJK characters.
         XCTAssertEqual(FlowText.normalizeCJKPunctuation("他说,see you. 好的!"),
                        "他说，see you. 好的！")
+        // Apple's transcriber pads full-width marks with a stray space.
+        XCTAssertEqual(FlowText.normalizeCJKPunctuation("那么我想说的是呢 ，大家好 ？"),
+                       "那么我想说的是呢，大家好？")
+        // Latin sentence spacing is untouched by the space cleanup.
+        XCTAssertEqual(FlowText.normalizeCJKPunctuation("Yes , I mean it"),
+                       "Yes , I mean it")
     }
 
     func testSmartJoin() {

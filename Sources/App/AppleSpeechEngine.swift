@@ -56,6 +56,13 @@ actor AppleSpeechEngine {
             let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
             let installed = await SpeechTranscriber.installedLocales
             if !installed.contains(where: { $0.identifier(.bcp47) == localeID }) {
+                // Each app gets a small quota of reserved locales; switching
+                // language without releasing the old reservation makes the
+                // install request fail. Free everything but the target.
+                for reserved in await AssetInventory.reservedLocales
+                where reserved.identifier(.bcp47) != localeID {
+                    _ = await AssetInventory.release(reservedLocale: reserved)
+                }
                 diag.set("downloading system model for \(localeID)…")
                 if let request = try await AssetInventory.assetInstallationRequest(
                     supporting: [transcriber]) {
@@ -103,6 +110,15 @@ actor AppleSpeechEngine {
         }
         guard samples.count >= 8000 else { return "" }
         if abortFlag.get() { return "" }
+        // Same energy gate as the Whisper path: a quiet window is a normal
+        // non-event, not something to analyze (or to report as an error).
+        var energy: Float = 0
+        for sample in samples { energy += sample * sample }
+        let rms = (energy / Float(samples.count)).squareRoot()
+        guard rms > 0.0005 else {
+            diag.set("skipped quiet window (rms \(rms))")
+            return ""
+        }
 
         let locale = Self.locale(for: language)
         // Modules are cheap to create; the heavy lifting is the system

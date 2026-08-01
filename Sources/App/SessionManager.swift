@@ -334,11 +334,11 @@ final class SessionManager: ObservableObject {
             return text
         case "apple":
             guard #available(iOS 26.0, *), let apple else { return "" }
-            let text = try await apple.transcribe(samples, language: language)
-            if text.isEmpty, samples.count > 16000 {
-                lastError = "Apple engine returned nothing — \(apple.diag.get())"
-            }
-            return text
+            // No empty-result banner here (Whisper parity): a quiet or
+            // unintelligible window legitimately transcribes to nothing.
+            // Real failures throw, and the timeout banner still names the
+            // engine stage.
+            return try await apple.transcribe(samples, language: language)
         default:
             return try await transcriber?.transcribe(samples, language: language) ?? ""
         }
