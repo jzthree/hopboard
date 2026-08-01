@@ -135,6 +135,18 @@ final class KeyboardModel: ObservableObject {
         }
     }
 
+    /// Throw away what's being said instead of transcribing it — misspoken
+    /// dictation shouldn't force an insert-then-delete. Nothing is awaited,
+    /// so no result can arrive to insert.
+    func discardRecording() {
+        guard state == .recording else { return }
+        send(.cancelSegment)
+        awaitingResultSince = nil
+        recordingStartedAt = nil
+        optimistic = (.ready, Date())
+        state = .ready
+    }
+
     func endSessionTapped() {
         send(.endSession)
         state = .noSession

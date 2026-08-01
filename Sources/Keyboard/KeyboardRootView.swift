@@ -3,6 +3,8 @@ import SwiftUI
 struct KeyboardRootView: View {
     @ObservedObject var model: KeyboardModel
     @Environment(\.openURL) private var openURL
+    /// End Session is one tap from `return`; arm it before it fires.
+    @State private var endArmed = false
 
     var body: some View {
         Group {
@@ -224,9 +226,10 @@ struct KeyboardRootView: View {
             }
 
         case .recording:
-            // Eyes-free stop: the whole red surface stops and transcribes;
-            // only the ✕ (end session) sits outside it.
-            HStack(spacing: 8) {
+            // Eyes-free stop: the whole red surface stops and transcribes.
+            // Discard rides on top — misspeaking shouldn't force an insert
+            // followed by a hunt for backspace.
+            ZStack(alignment: .trailing) {
                 Button {
                     model.micTapped()
                 } label: {
@@ -260,6 +263,20 @@ struct KeyboardRootView: View {
                 }
                 .buttonStyle(KeyStyle())
                 .accessibilityLabel("Stop and transcribe")
+
+                Button {
+                    model.discardRecording()
+                } label: {
+                    Label("Discard", systemImage: "trash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .frame(height: 38)
+                        .glassPill()
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(KeyStyle())
+                .padding(.trailing, 8)
             }
 
         case .transcribing:
@@ -388,20 +405,41 @@ struct KeyboardRootView: View {
         }
     }
 
-    /// End Session, demoted to the bottom corner: rare action, cheap seat.
+    /// End Session, demoted to the bottom corner: rare action, cheap seat —
+    /// but it sits next to `return`, and a misfire costs a trip to the app
+    /// to start a new session. So it asks first: tap once to arm ("End?"),
+    /// again within a few seconds to confirm.
     private var endKey: some View {
         Button {
-            model.endSessionTapped()
+            if endArmed {
+                endArmed = false
+                model.endSessionTapped()
+            } else {
+                withAnimation(.snappy) { endArmed = true }
+            }
         } label: {
-            Image(systemName: "xmark.circle")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(width: 40, height: 42)
-                .background(keyBackground)
-                .contentShape(Rectangle())
+            Group {
+                if endArmed {
+                    Text("End?")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                } else {
+                    Image(systemName: "xmark.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: endArmed ? 52 : 40, height: 42)
+            .background(keyBackground)
+            .contentShape(Rectangle())
         }
         .buttonStyle(KeyStyle())
-        .accessibilityLabel("End Session")
+        .accessibilityLabel(endArmed ? "Confirm end session" : "End Session")
+        .task(id: endArmed) {
+            guard endArmed else { return }
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation(.snappy) { endArmed = false }
+        }
     }
 
     private var keyBackground: some View {
