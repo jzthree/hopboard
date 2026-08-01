@@ -78,6 +78,7 @@ final class SessionManager: ObservableObject {
     static let gemmaThinkingBudgetKey = "flow.gemmaThinkingBudget"
     static let gemmaCustomInstructionKey = "flow.gemmaCustomInstruction"
     static let litertVariantKey = "flow.litertVariant"
+    static let voiceProcessingKey = "flow.voiceProcessing"
 
     static func litertVariant() -> String {
         UserDefaults.standard.string(forKey: litertVariantKey) ?? "e2b"
@@ -282,6 +283,12 @@ final class SessionManager: ObservableObject {
         recorder.onWindow = { [weak self] window in
             Task { @MainActor in self?.enqueueWindow(window) }
         }
+        recorder.voiceProcessing = UserDefaults.standard.object(forKey: Self.voiceProcessingKey) as? Bool ?? true
+        // Apple's transcriber is built for long-form audio and runs ~35×
+        // realtime, so chunking it is pure loss: every window boundary is a
+        // chance to clip a word and throws away the context the model uses
+        // to decide spelling and punctuation. Give it the whole dictation
+        // (one window only past two minutes) and let it think once.
         // Gemma's 12 s window is a latency/memory choice, NOT a batch limit:
         // audio tokenizes at ~25 tok/s (34 s = ~850 tokens, evals fine even
         // at n_batch 1024 on the Mac harness — the old device -3 was the
@@ -289,7 +296,11 @@ final class SessionManager: ObservableObject {
         // bound the post-stop tail and keep CPU bursts small while
         // backgrounded; n_ctx 4096 could take ~2 min per call if we ever
         // want fewer seams. Whisper keeps its native 30 s.
-        recorder.windowSeconds = choice == "gemma" || choice == "litert" ? 12 : 30
+        switch choice {
+        case "gemma", "litert": recorder.windowSeconds = 12
+        case "apple": recorder.windowSeconds = 120
+        default: recorder.windowSeconds = 30
+        }
         do {
             try recorder.start()
         } catch {

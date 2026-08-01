@@ -9,6 +9,7 @@ struct ContentView: View {
     @AppStorage(SessionManager.gemmaThinkingBudgetKey) private var gemmaThinkingBudget = 48
     @AppStorage(SessionManager.gemmaCustomInstructionKey) private var gemmaCustomInstruction = ""
     @AppStorage(SessionManager.litertVariantKey) private var litertVariant = "e2b"
+    @AppStorage(SessionManager.voiceProcessingKey) private var voiceProcessing = true
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
     @State private var loadingStart: Date?
@@ -294,6 +295,11 @@ struct ContentView: View {
                 session.endSession()
                 session.syncLanguagePolicy()
             }
+            Toggle("Noise reduction & auto gain", isOn: $voiceProcessing)
+                .onChange(of: voiceProcessing) { _, _ in
+                    // The audio unit is configured when the engine starts.
+                    session.endSession()
+                }
             NavigationLink {
                 KeyboardLanguagesEditor()
             } label: {
@@ -356,7 +362,7 @@ struct ContentView: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Noise reduction runs your mic through the same front-end as system dictation — cleaner input in noisy rooms and for quiet speech; turn it off to A/B if a recording sounds over-processed. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
         }
     }
 

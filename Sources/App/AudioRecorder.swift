@@ -32,6 +32,12 @@ final class AudioRecorder {
     var windowSeconds = 30
     static let windowSearchFrames = Int(targetSampleRate) * 5
 
+    /// Apple's voice-processing I/O unit: echo cancellation, noise
+    /// suppression and automatic gain — the same front-end system dictation
+    /// uses. Quiet or far-field speech reaches the model at a usable level
+    /// instead of being transcribed as a guess. Set before start().
+    var voiceProcessing = true
+
     var windowFrames: Int { Int(Self.targetSampleRate) * windowSeconds }
 
     /// The quietest cut point inside the search region at the end of a
@@ -103,6 +109,12 @@ final class AudioRecorder {
             name: AVAudioSession.interruptionNotification, object: session)
 
         let input = engine.inputNode
+        // Must precede reading the format — enabling it changes the node's
+        // output format. Never fatal: if the unit refuses (rare hardware
+        // states), we simply record raw.
+        if input.isVoiceProcessingEnabled != voiceProcessing {
+            try? input.setVoiceProcessingEnabled(voiceProcessing)
+        }
         let inputFormat = input.outputFormat(forBus: 0)
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
