@@ -84,11 +84,9 @@ struct KeyboardRootView: View {
             VStack(spacing: 2) {
                 Text("Turn on Full Access for HopBoard")
                     .font(.footnote.weight(.semibold))
-                Text("Settings → General → Keyboard → Keyboards → HopBoard")
+                Text("Settings ▸ Keyboards ▸ HopBoard")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 6)
 
@@ -113,11 +111,9 @@ struct KeyboardRootView: View {
                             Text("Start Session")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
-                            Text("Opens HopBoard — then swipe back here")
+                            Text("Opens HopBoard")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
                         }
                         Spacer(minLength: 0)
                     }
@@ -157,13 +153,9 @@ struct KeyboardRootView: View {
                             Text(status.isEmpty ? "Preparing model…" : status)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Text("Loading runs only inside HopBoard — tap to open")
+                            Text("Tap to open HopBoard")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
                         }
                         Spacer(minLength: 0)
                     }
@@ -209,10 +201,8 @@ struct KeyboardRootView: View {
                         Button {
                             model.insertPending()
                         } label: {
-                            Label("Insert \u{201C}\(pending.text.prefix(10))…\u{201D}",
-                                  systemImage: "arrow.down.circle.fill")
+                            Label("Insert", systemImage: "arrow.down.circle.fill")
                                 .font(.caption.weight(.medium))
-                                .lineLimit(1)
                                 .padding(.horizontal, 12)
                                 .frame(height: 38)
                                 .glassPill(tint: FlowBrand.accent)

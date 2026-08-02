@@ -159,7 +159,7 @@ struct ContentView: View {
             switch session.modelState {
             case .downloading(let fraction):
                 ProgressView(value: fraction) {
-                    Text("Downloading \(SessionManager.selectedModelDescription()) — one time per model")
+                    Text("Downloading \(SessionManager.selectedModelDescription())")
                         .font(.callout)
                 }
                 .progressViewStyle(.linear)
@@ -180,7 +180,7 @@ struct ContentView: View {
                     }
                 }
                 .foregroundStyle(.secondary)
-                Text("Keep HopBoard open — loading pauses if you leave. The first load after an install or update optimizes for the Neural Engine and can take a couple of minutes; after that it's seconds, and the model stays loaded between sessions.")
+                Text("Keep HopBoard open. The first load after an update takes a few minutes; after that, seconds.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -296,7 +296,7 @@ struct ContentView: View {
                 .tag("turbo")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Accurate")
-                    Text("large-v3 · adds Chinese punctuation · extra 950 MB download, slower")
+                    Text("large-v3 · adds Chinese punctuation · 950 MB")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -304,7 +304,7 @@ struct ContentView: View {
                 if #available(iOS 26.0, *) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Apple (iOS 26)")
-                        Text("the system transcriber behind Notes & Voice Memos · fast, punctuates incl. Chinese · no app download")
+                        Text("Apple's own · fast · punctuates Chinese · no download")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -312,14 +312,14 @@ struct ContentView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Gemma 4 (experimental)")
-                    Text("audio LLM · follows instructions: styled tone & punctuated Chinese · extra 4.1 GB, battery-hungrier")
+                    Text("audio LLM · styled tone, punctuated Chinese · 4.1 GB")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .tag("gemma")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Gemma 4 LiteRT (experimental)")
-                    Text("same model via Google's official runtime · QAT quant, likely more accurate · extra 2.6 GB")
+                    Text("same model, Google's runtime · QAT quant · 2.6 GB")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -408,7 +408,7 @@ struct ContentView: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Your mic runs through Apple's voice-processing unit, which is also what makes iOS offer mic modes for HopBoard. Tap Mic mode to choose in Control Center: Standard is the usual voice processing, Voice Isolation adds on-device ML that suppresses everything but your voice (best in a noisy room), and Wide Spectrum is the least processed. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
+            Text("Pin a language — it beats auto-detect, and the Apple model does one at a time. Language and tone are on the keyboard too. Mic mode is Apple's: Voice Isolation for noisy rooms.")
         }
     }
 
@@ -656,7 +656,7 @@ struct GemmaPromptEditor: View {
             } header: {
                 Text("Instruction · \(isCustom ? "custom" : "default")")
             } footer: {
-                Text("The default follows your pinned language and tone. A custom instruction replaces it verbatim for every dictation — language and tone stop shaping the prompt (tone still applies its light deterministic touch-up to the result). Applies from your next dictation.")
+                Text("A custom instruction replaces the built-in one for every dictation, so language and tone stop shaping the prompt.")
             }
             if showsAssembledPrompt {
                 Section {
@@ -668,13 +668,11 @@ struct GemmaPromptEditor: View {
                 } header: {
                     Text("Exact prompt sent to Gemma")
                 } footer: {
-                    Text(thinking
-                        ? "The audio placeholder is replaced by your recording. The final line pre-opens the thought channel because Gemma thinking is on."
-                        : "The audio placeholder is replaced by your recording.")
+                    Text("The placeholder is your recording.")
                 }
             } else {
                 Section {
-                    Text("LiteRT applies Gemma's chat template inside the runtime; this instruction is sent alongside your audio as the user turn.")
+                    Text("LiteRT applies Gemma's template itself.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -706,7 +704,7 @@ struct KeyboardLanguagesEditor: View {
             } header: {
                 Text(session.favoriteLanguagesAreCustom ? "Custom" : "From your iOS languages & keyboards")
             } footer: {
-                Text("The keyboard's language chip cycles through these. They follow the languages and keyboards you've added in iOS Settings until you change them here. Auto is skipped while the Apple model is selected — it has no detection, so a concrete language must be pinned.")
+                Text("The keyboard's language chip cycles these. Follows your iOS languages until you change them here.")
             }
             if session.favoriteLanguagesAreCustom {
                 Section {
@@ -768,7 +766,7 @@ struct VocabularyEditor: View {
             } header: {
                 Text("One per line · \(terms.count) term\(terms.count == 1 ? "" : "s")")
             } footer: {
-                Text("Write each name the way it should appear — HopBoard, Anthropic, 张伟. Dictations are matched against these by sound, so \u{201C}hop board\u{201D} and \u{201C}hop bored\u{201D} both become HopBoard, and a Chinese name written with the wrong character is fixed when the pinyin matches. Applies to every engine; Gemma also receives the list while it transcribes.")
+                Text("Write each name as it should appear. Matching is by sound: \u{201C}hop board\u{201D} becomes HopBoard, and a Chinese homophone is corrected by pinyin.")
             }
 
             Section {
@@ -788,8 +786,6 @@ struct VocabularyEditor: View {
                 }
             } header: {
                 Text("Try it")
-            } footer: {
-                Text("Paste something that came out wrong to see whether your list would have fixed it.")
             }
         }
         .navigationTitle("Vocabulary")

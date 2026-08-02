@@ -627,7 +627,8 @@ final class SessionManager: ObservableObject {
         case .unloaded:
             store.modelStatus = ""
         case .downloading(let fraction):
-            store.modelStatus = "Downloading \(Self.selectedModelDescription()) \(Int(fraction * 100))%…"
+            // The keyboard row is narrow; the app card names the model.
+            store.modelStatus = "Downloading \(Int(fraction * 100))%"
         case .loading:
             let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
             if choice == "gemma" || choice == "litert" || choice == "apple" {
@@ -637,7 +638,7 @@ final class SessionManager: ObservableObject {
                 loadingLabel = Transcriber.hasOptimized(model)
                     ? "Loading model" : "Optimizing for Neural Engine"
             }
-            store.modelStatus = loadingLabel + "…"
+            store.modelStatus = loadingLabel
         case .ready:
             store.modelStatus = ""
         case .failed(let message):
