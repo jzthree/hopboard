@@ -92,6 +92,10 @@ final class KeyboardViewController: UIInputViewController {
     /// from having no focused field at all.
     var documentHasText: Bool { textDocumentProxy.hasText }
 
+    /// Password fields: the proxy withholds the document context entirely,
+    /// so an insert there can never be confirmed by reading it back.
+    var documentIsSecure: Bool { textDocumentProxy.isSecureTextEntry ?? false }
+
     func deleteBackwardOnce() {
         textDocumentProxy.deleteBackward()
     }

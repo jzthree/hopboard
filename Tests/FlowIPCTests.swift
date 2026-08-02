@@ -128,6 +128,49 @@ final class FlowIPCTests: XCTestCase {
         XCTAssertTrue(store.autoLanguageAllowed)
     }
 
+    func testInsertLandedRequiresOurTextAtTheCursor() {
+        let inserted = FlowText.foldTail(" Hello there, this is a test.")
+
+        // THE REGRESSION: the host had not yet delivered the document
+        // context when we inserted (it is asynchronous and routinely nil
+        // just after the keyboard appears), then filled it in on its own.
+        // The old before/after comparison saw "it changed" and reported a
+        // successful insert, so the dictation was marked delivered while
+        // nothing had been typed. Existing text that is not ours must read
+        // as a failure.
+        XCTAssertFalse(FlowText.insertLanded(contextAfter: "text that was already there",
+                                             insertedTail: inserted,
+                                             isSecure: false, hasText: true))
+        // Nothing focused: no context at all.
+        XCTAssertFalse(FlowText.insertLanded(contextAfter: nil, insertedTail: inserted,
+                                             isSecure: false, hasText: false))
+        // A document with text elsewhere but our insert swallowed.
+        XCTAssertFalse(FlowText.insertLanded(contextAfter: nil, insertedTail: inserted,
+                                             isSecure: false, hasText: true))
+        // It landed: the context now ends with what we sent.
+        XCTAssertTrue(FlowText.insertLanded(contextAfter: "Before. Hello there, this is a test.",
+                                            insertedTail: inserted,
+                                            isSecure: false, hasText: true))
+        // Landed into an empty field.
+        XCTAssertTrue(FlowText.insertLanded(contextAfter: "Hello there, this is a test.",
+                                            insertedTail: inserted,
+                                            isSecure: false, hasText: true))
+        // The host's own capitalization/spacing tweak still counts.
+        XCTAssertTrue(FlowText.insertLanded(contextAfter: "hello there this is a Test",
+                                            insertedTail: inserted,
+                                            isSecure: false, hasText: true))
+        // Password fields never report context — trust the insert there.
+        XCTAssertTrue(FlowText.insertLanded(contextAfter: nil, insertedTail: inserted,
+                                            isSecure: true, hasText: false))
+        // Chinese, where folding must keep the characters themselves.
+        let cjk = FlowText.foldTail("你好，世界。")
+        XCTAssertFalse(cjk.isEmpty)
+        XCTAssertTrue(FlowText.insertLanded(contextAfter: "开始 你好，世界。", insertedTail: cjk,
+                                            isSecure: false, hasText: true))
+        XCTAssertFalse(FlowText.insertLanded(contextAfter: "开始", insertedTail: cjk,
+                                             isSecure: false, hasText: true))
+    }
+
     func testSmartJoin() {
         XCTAssertEqual(FlowText.smartJoin(before: nil, insertion: "Hello"), "Hello")
         XCTAssertEqual(FlowText.smartJoin(before: "", insertion: "Hello"), "Hello")

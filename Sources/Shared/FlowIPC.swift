@@ -394,6 +394,37 @@ enum FlowText {
         return letters.lowercased()
     }
 
+    /// Case- and punctuation-insensitive tail of a string, for confirming
+    /// an insert against the host's document context. Short so it survives
+    /// context truncation, folded so a host's own autocapitalization or
+    /// spacing tweak doesn't read as a failure.
+    static func foldTail(_ text: String) -> String {
+        let folded = text.lowercased().unicodeScalars
+            .filter { CharacterSet.alphanumerics.contains($0) }
+            .map(String.init).joined()
+        return String(folded.suffix(12))
+    }
+
+    /// Did OUR text land in the host document?
+    ///
+    /// Comparing the context before and after the insert was WRONG, twice
+    /// over: documentContextBeforeInput is delivered asynchronously by the
+    /// host — routinely nil just after the keyboard appears, then filling
+    /// in by itself — so "it changed" reported success for inserts that
+    /// never happened, and the dictation was marked delivered while the
+    /// document stayed empty. The only honest evidence is that the context
+    /// now ENDS with what we inserted.
+    static func insertLanded(contextAfter: String?, insertedTail: String,
+                             isSecure: Bool, hasText: Bool) -> Bool {
+        // Password fields withhold the context entirely; nothing to read.
+        if isSecure { return true }
+        // Nothing alphanumeric to look for (a lone "。"): fall back to
+        // whether the document has any text at all.
+        guard !insertedTail.isEmpty else { return hasText }
+        guard let after = contextAfter else { return false }
+        return foldTail(after).hasSuffix(insertedTail)
+    }
+
     /// Joins dictated text onto what precedes the cursor: a leading space
     /// unless we're at a start, after whitespace, or after an opening
     /// bracket/quote.

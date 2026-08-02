@@ -52,7 +52,9 @@ final class KeyboardModel: ObservableObject {
     /// An insert waiting to be confirmed against the document context.
     private struct Probe {
         let id: UUID?
-        let before: String?
+        /// Folded tail of what we inserted — the only evidence that OUR
+        /// text is what landed.
+        let tail: String
         let at: Date
     }
     private var insertProbe: Probe?
@@ -338,31 +340,41 @@ final class KeyboardModel: ObservableObject {
         guard let controller else { return }
         let joined = FlowText.smartJoin(before: controller.textBeforeCursor, insertion: text)
         guard !joined.isEmpty else { return }
-        insertProbe = Probe(id: id, before: controller.textBeforeCursor, at: Date())
+        insertProbe = Probe(id: id, tail: FlowText.foldTail(joined), at: Date())
         controller.insert(joined)
     }
 
     private func verifyInsertIfNeeded() {
         guard let probe = insertProbe, let controller else { return }
-        // Give the host a beat to apply the edit and report back.
-        guard Date().timeIntervalSince(probe.at) >= 0.4 else { return }
-        insertProbe = nil
-        let after = controller.textBeforeCursor
-        // Context changed → definitely landed. Context stayed nil but the
-        // document now has text → a secure field, which never reports
-        // context; also landed. Otherwise the host had nothing focused.
-        let landed = after != probe.before
-            || (after == nil && probe.before == nil && controller.documentHasText)
-        guard landed else {
-            // The host swallowed it. Leave the result unconsumed: the pill
-            // stays, and the text is still one tap from the cursor.
+        let elapsed = Date().timeIntervalSince(probe.at)
+        // The host applies the edit and reports the new context on its own
+        // schedule; poll for a while before concluding anything.
+        guard elapsed >= 0.3 else { return }
+        if landed(probe, controller) {
+            insertProbe = nil
+            if let id = probe.id {
+                store.lastConsumedResultID = id
+                pendingResult = nil
+            }
+            flashInserted()
             return
         }
-        if let id = probe.id {
-            store.lastConsumedResultID = id
-            pendingResult = nil
-        }
-        flashInserted()
+        guard elapsed >= 1.5 else { return }   // keep waiting
+        // The host swallowed it. Leave the result unconsumed: the pill
+        // stays, and the text is still one tap from the cursor.
+        insertProbe = nil
+    }
+
+    /// Did OUR text land? Comparing the context before and after was wrong:
+    /// documentContextBeforeInput arrives asynchronously — it is routinely
+    /// nil right after the keyboard appears and fills in by itself — so any
+    /// "it changed" test reports success for an insert that never happened.
+    /// The honest check is that the context now ENDS with what we inserted.
+    private func landed(_ probe: Probe, _ controller: KeyboardViewController) -> Bool {
+        FlowText.insertLanded(contextAfter: controller.textBeforeCursor,
+                              insertedTail: probe.tail,
+                              isSecure: controller.documentIsSecure,
+                              hasText: controller.documentHasText)
     }
 
     private func updatePendingResult() {
