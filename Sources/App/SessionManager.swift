@@ -163,6 +163,10 @@ final class SessionManager: ObservableObject {
 
     var keyboardSeen: Bool { store.keyboardSeen }
 
+    /// True while the running engine actually has the voice-processing unit
+    /// — mic modes only apply then.
+    var voiceProcessingActive: Bool { recorder.usingVoiceProcessing }
+
     /// Whether the HopBoard keyboard is enabled in Settings — readable
     /// live from the system's enabled-keyboards list, so the checklist
     /// updates the moment the user returns from Settings.
@@ -319,7 +323,7 @@ final class SessionManager: ObservableObject {
         do {
             try recorder.start()
         } catch {
-            lastError = "Could not start the microphone: \(error.localizedDescription)"
+            lastError = "Could not start the microphone: \(error.localizedDescription). Check that nothing else is using it (a call, another recording app), then start the session again."
             publish(.idle)
             return
         }

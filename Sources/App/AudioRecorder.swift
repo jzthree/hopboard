@@ -38,6 +38,12 @@ final class AudioRecorder {
     /// instead of being transcribed as a guess. Set before start().
     var voiceProcessing = true
 
+    /// Whether the running engine actually got the voice-processing unit —
+    /// it can refuse depending on route and graph, and the UI shouldn't
+    /// claim mic modes that aren't in play. (Declared outside the device
+    /// branch so simulator builds — the test host — still compile.)
+    private(set) var usingVoiceProcessing = false
+
     var windowFrames: Int { Int(Self.targetSampleRate) * windowSeconds }
 
     /// The quietest cut point inside the search region at the end of a
@@ -100,41 +106,76 @@ final class AudioRecorder {
     var isRunning: Bool { engine.isRunning }
 
     func start() throws {
+        do {
+            try startEngine(withVoiceProcessing: voiceProcessing)
+        } catch {
+            // A microphone that starts plain beats a session that refuses to
+            // start at all: the voice-processing unit declines on some
+            // routes (and takes the whole graph down with it), which is a
+            // failure the user experiences as "cannot start mic".
+            guard voiceProcessing else { throw error }
+            teardownEngine()
+            try startEngine(withVoiceProcessing: false)
+        }
+    }
+
+    private func startEngine(withVoiceProcessing enable: Bool) throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers])
+        // .voiceChat is the mode the voice-processing unit expects; plain
+        // capture keeps the long-standing .default configuration.
+        try session.setCategory(.playAndRecord,
+                                mode: enable ? .voiceChat : .default,
+                                options: [.mixWithOthers])
         try session.setActive(true)
 
+        NotificationCenter.default.removeObserver(
+            self, name: AVAudioSession.interruptionNotification, object: session)
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleInterruption(_:)),
             name: AVAudioSession.interruptionNotification, object: session)
 
         let input = engine.inputNode
-        // Must precede reading the format — enabling it changes the node's
-        // output format. Never fatal: if the unit refuses (rare hardware
-        // states), we simply record raw.
-        if input.isVoiceProcessingEnabled != voiceProcessing {
-            try? input.setVoiceProcessingEnabled(voiceProcessing)
+        // Must precede reading the format — toggling it reconfigures the
+        // node and changes its output format.
+        if input.isVoiceProcessingEnabled != enable {
+            try input.setVoiceProcessingEnabled(enable)
         }
         let inputFormat = input.outputFormat(forBus: 0)
+        // A zero-rate format means the route isn't ready; installing a tap
+        // with it raises rather than throws, taking the app with it.
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw NSError(domain: "HopBoard", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "The microphone route is not ready"])
+        }
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: Self.targetSampleRate,
-            channels: 1, interleaved: false) else {
+            channels: 1, interleaved: false),
+            let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
             throw NSError(domain: "HopBoard", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Could not create 16 kHz format"])
         }
-        converter = AVAudioConverter(from: inputFormat, to: outputFormat)
+        self.converter = converter
 
         input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             self?.consume(buffer, outputFormat: outputFormat)
         }
         engine.prepare()
         try engine.start()
+        usingVoiceProcessing = enable
+    }
+
+    private func teardownEngine() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        engine.reset()
+        try? engine.inputNode.setVoiceProcessingEnabled(false)
     }
 
     func stop() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        usingVoiceProcessing = false
         NotificationCenter.default.removeObserver(self)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         lock.lock()

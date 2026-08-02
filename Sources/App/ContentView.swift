@@ -24,6 +24,16 @@ struct ContentView: View {
 
     private static let settingsAnchor = "dictation-settings"
 
+    /// Don't advertise a mode when the voice-processing unit isn't actually
+    /// running — it declines on some routes, and we fall back to plain
+    /// capture rather than failing to record.
+    private var micModeValue: String {
+        if session.state != .idle, !session.voiceProcessingActive {
+            return "Unavailable on this route"
+        }
+        return micModeName
+    }
+
     /// The mode the user picked in Control Center, named as iOS names it.
     private var micModeName: String {
         switch AVCaptureDevice.preferredMicrophoneMode {
@@ -327,7 +337,7 @@ struct ContentView: View {
             Button {
                 AVCaptureDevice.showSystemUserInterface(.microphoneModes)
             } label: {
-                LabeledContent("Mic mode", value: micModeName)
+                LabeledContent("Mic mode", value: micModeValue)
             }
             .foregroundStyle(.primary)
             NavigationLink {
