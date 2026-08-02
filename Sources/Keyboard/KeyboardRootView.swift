@@ -5,6 +5,10 @@ struct KeyboardRootView: View {
     @Environment(\.openURL) private var openURL
     /// End Session is one tap from `return`; arm it before it fires.
     @State private var endArmed = false
+    /// Width of the chips riding on the primary surface, measured so the
+    /// row's own text can reserve room instead of sliding under them.
+    @State private var clusterWidth: CGFloat = 0
+    @State private var discardWidth: CGFloat = 0
 
     var body: some View {
         Group {
@@ -118,7 +122,9 @@ struct KeyboardRootView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.leading, 8)
-                    .padding(.trailing, 10)
+                    // Room for the chips overlaid on the trailing edge, so
+                    // the caption stops before them instead of underneath.
+                    .padding(.trailing, clusterWidth + 14)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .background(surface(FlowBrand.accent))
@@ -134,6 +140,7 @@ struct KeyboardRootView: View {
                         openURL(Flow.settingsURL)
                     }
                 }
+                .measuringWidth(into: $clusterWidth)
                 .padding(.trailing, 8)
             }
 
@@ -266,7 +273,8 @@ struct KeyboardRootView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.leading, 8)
-                    .padding(.trailing, 10)
+                    // Keep the timer and meter clear of the Discard pill.
+                    .padding(.trailing, discardWidth + 14)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .background(surface(.red))
@@ -286,6 +294,7 @@ struct KeyboardRootView: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(KeyStyle())
+                .measuringWidth(into: $discardWidth)
                 .padding(.trailing, 8)
             }
 
@@ -309,10 +318,17 @@ struct KeyboardRootView: View {
         }
     }
 
-    /// The primary surface shared by no-session, ready and recording: a
-    /// drawn, full-row target so the thumb never has to aim.
+    /// The primary surface shared by no-session, ready and recording. The
+    /// TAP area is the full row — the thumb never has to aim — but the
+    /// drawn shade is inset from it: full-bleed tint ran into the host
+    /// app's own UI at the keyboard's top edge and looked like a mistake.
+    /// Bounds you can see are honest here in the other direction: the
+    /// target is never smaller than what's drawn, only larger.
     private func surface(_ tint: Color) -> some View {
-        RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.12))
+        RoundedRectangle(cornerRadius: 12)
+            .fill(tint.opacity(0.12))
+            .padding(.vertical, 5)
+            .padding(.horizontal, 2)
     }
 
     /// Text-only pill (language): narrower than a Label, and the text is
@@ -685,5 +701,28 @@ struct KeyboardLevelMeter: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: level)
+    }
+}
+
+/// Measures a view's width so a sibling can reserve space for it.
+private struct ClusterWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+extension View {
+    /// Report this view's width into `width` — used so overlaid chips and
+    /// the text beneath them never occupy the same points.
+    func measuringWidth(into width: Binding<CGFloat>) -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: ClusterWidthKey.self, value: proxy.size.width)
+            }
+        )
+        .onPreferenceChange(ClusterWidthKey.self) { measured in
+            if abs(width.wrappedValue - measured) > 0.5 { width.wrappedValue = measured }
+        }
     }
 }
