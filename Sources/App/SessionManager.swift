@@ -81,7 +81,6 @@ final class SessionManager: ObservableObject {
     static let gemmaThinkingBudgetKey = "flow.gemmaThinkingBudget"
     static let gemmaCustomInstructionKey = "flow.gemmaCustomInstruction"
     static let litertVariantKey = "flow.litertVariant"
-    static let voiceProcessingKey = "flow.voiceProcessing"
     static let vocabularyKey = FlowVocabulary.defaultsKey
 
     /// Everything that happens to a transcript between the engine and the
@@ -295,7 +294,11 @@ final class SessionManager: ObservableObject {
         recorder.onWindow = { [weak self] window in
             Task { @MainActor in self?.enqueueWindow(window) }
         }
-        recorder.voiceProcessing = UserDefaults.standard.object(forKey: Self.voiceProcessingKey) as? Bool ?? true
+        // Always on: it is the precondition for iOS mic modes, and turning
+        // it off would silently remove Voice Isolation from the user's
+        // Control Center choices. "Least processed" is Wide Spectrum, not
+        // a switch of ours.
+        recorder.voiceProcessing = true
         // Apple's transcriber is built for long-form audio and runs ~35×
         // realtime, so chunking it is pure loss: every window boundary is a
         // chance to clip a word and throws away the context the model uses

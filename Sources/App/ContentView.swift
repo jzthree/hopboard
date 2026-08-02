@@ -10,7 +10,6 @@ struct ContentView: View {
     @AppStorage(SessionManager.gemmaThinkingBudgetKey) private var gemmaThinkingBudget = 48
     @AppStorage(SessionManager.gemmaCustomInstructionKey) private var gemmaCustomInstruction = ""
     @AppStorage(SessionManager.litertVariantKey) private var litertVariant = "e2b"
-    @AppStorage(SessionManager.voiceProcessingKey) private var voiceProcessing = true
     @AppStorage(SessionManager.vocabularyKey) private var vocabulary = ""
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
@@ -322,21 +321,15 @@ struct ContentView: View {
                 session.endSession()
                 session.syncLanguagePolicy()
             }
-            Toggle("Voice processing", isOn: $voiceProcessing)
-                .onChange(of: voiceProcessing) { _, _ in
-                    // The audio unit is configured when the engine starts.
-                    session.endSession()
-                }
-            if voiceProcessing {
-                // Voice processing is what makes iOS offer mic modes for
-                // this app, so the picker belongs right under the switch.
-                Button {
-                    AVCaptureDevice.showSystemUserInterface(.microphoneModes)
-                } label: {
-                    LabeledContent("Mic mode", value: micModeName)
-                }
-                .foregroundStyle(.primary)
+            // One control, and it's the system's: iOS only offers mic modes
+            // to apps that use voice processing, so we always use it and
+            // let the mode be the choice (Wide Spectrum = least processed).
+            Button {
+                AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+            } label: {
+                LabeledContent("Mic mode", value: micModeName)
             }
+            .foregroundStyle(.primary)
             NavigationLink {
                 VocabularyEditor()
             } label: {
@@ -405,7 +398,7 @@ struct ContentView: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Voice processing routes the mic through Apple's own voice-processing unit — echo cancellation, noise suppression and automatic gain, nothing hand-rolled — and it is also what makes iOS offer mic modes here: tap Mic mode to pick Voice Isolation (or Wide Spectrum) in Control Center. Turn the switch off for raw capture. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
+            Text("Pinning a language is faster and more accurate than auto-detect. Language and tone can also be switched right on the keyboard. For punctuated Chinese, pick the Accurate model AND pin the language to Chinese, or try the Apple model. The Apple model transcribes only the pinned language (Auto = your device language). Your mic runs through Apple's voice-processing unit, which is also what makes iOS offer mic modes for HopBoard. Tap Mic mode to choose in Control Center: Standard is the usual voice processing, Voice Isolation adds on-device ML that suppresses everything but your voice (best in a noisy room), and Wide Spectrum is the least processed. Gemma thinking lets the model reason before answering — may help difficult audio, costs time per dictation; the budget caps how long it may reason before it is made to answer. Changes apply from your next dictation; model changes from your next session.")
         }
     }
 
