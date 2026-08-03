@@ -331,15 +331,17 @@ struct ContentView: View {
                 session.endSession()
                 session.syncLanguagePolicy()
             }
-            // One control, and it's the system's: iOS only offers mic modes
-            // to apps that use voice processing, so we always use it and
-            // let the mode be the choice (Wide Spectrum = least processed).
-            Button {
-                AVCaptureDevice.showSystemUserInterface(.microphoneModes)
-            } label: {
-                LabeledContent("Mic mode", value: micModeValue)
+            // Only while a session holds the mic: Control Center's mic-mode
+            // control exists for the app that is CAPTURING, so with no
+            // session this row leads to a picker that can't offer HopBoard.
+            if session.state != .idle {
+                Button {
+                    AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+                } label: {
+                    LabeledContent("Mic mode", value: micModeValue)
+                }
+                .foregroundStyle(.primary)
             }
-            .foregroundStyle(.primary)
             NavigationLink {
                 VocabularyEditor()
             } label: {
@@ -408,7 +410,7 @@ struct ContentView: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Pin a language — it beats auto-detect, and the Apple model does one at a time. Language and tone are on the keyboard too. Mic mode is Apple's: Voice Isolation for noisy rooms.")
+            Text("Pin a language — it beats auto-detect, and the Apple model does one at a time. Language and tone are on the keyboard too.")
         }
     }
 
