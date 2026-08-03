@@ -24,16 +24,6 @@ struct ContentView: View {
 
     private static let settingsAnchor = "dictation-settings"
 
-    /// Don't advertise a mode when the voice-processing unit isn't actually
-    /// running — it declines on some routes, and we fall back to plain
-    /// capture rather than failing to record.
-    private var micModeValue: String {
-        if session.state != .idle, !session.voiceProcessingActive {
-            return "Unavailable on this route"
-        }
-        return micModeName
-    }
-
     /// The mode the user picked in Control Center, named as iOS names it.
     private var micModeName: String {
         switch AVCaptureDevice.preferredMicrophoneMode {
@@ -331,14 +321,16 @@ struct ContentView: View {
                 session.endSession()
                 session.syncLanguagePolicy()
             }
-            // Only while a session holds the mic: Control Center's mic-mode
-            // control exists for the app that is CAPTURING, so with no
-            // session this row leads to a picker that can't offer HopBoard.
-            if session.state != .idle {
+            // Only while the mic is actually running with voice processing:
+            // Control Center's mic-mode control exists for the app that is
+            // CAPTURING. A session that is still loading its model hasn't
+            // opened the mic yet, so the row could only have said
+            // "unavailable" — better to not be there.
+            if session.voiceProcessingActive {
                 Button {
                     AVCaptureDevice.showSystemUserInterface(.microphoneModes)
                 } label: {
-                    LabeledContent("Mic mode", value: micModeValue)
+                    LabeledContent("Mic mode", value: micModeName)
                 }
                 .foregroundStyle(.primary)
             }
