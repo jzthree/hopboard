@@ -81,6 +81,14 @@ final class SessionManager: ObservableObject {
     /// UserDefaults is a leftover from a removed engine.
     static let modelChoices = ["turbo", "accurate", "apple"]
 
+    /// A stored model choice mapped onto something this build can run. A
+    /// Picker whose selection matches no tag renders a BLANK row, so a
+    /// leftover "gemma"/"litert" has to be repointed, not tolerated.
+    static func migratedModelChoice(_ stored: String?) -> String {
+        guard let stored, modelChoices.contains(stored) else { return "turbo" }
+        return stored
+    }
+
     /// Everything that happens to a transcript between the engine and the
     /// cursor. Vocabulary goes LAST so its spelling survives tone (very
     /// casual lowercases, which would undo "HopBoard").
@@ -106,8 +114,8 @@ final class SessionManager: ObservableObject {
     private static func retireRemovedEngines() {
         let defaults = UserDefaults.standard
         if let choice = defaults.string(forKey: modelKey),
-           !modelChoices.contains(choice) {
-            defaults.set("turbo", forKey: modelKey)
+           choice != migratedModelChoice(choice) {
+            defaults.set(migratedModelChoice(choice), forKey: modelKey)
         }
         for key in ["flow.gemmaThinking", "flow.gemmaThinkingBudget",
                     "flow.gemmaCustomInstruction", "flow.litertVariant"] {

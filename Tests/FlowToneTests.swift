@@ -41,3 +41,23 @@ final class AppleSpeechEngineTests: XCTestCase {
         XCTAssertEqual(AppleSpeechEngine.locale(for: nil), Locale.current)
     }
 }
+
+@MainActor
+final class ModelChoiceMigrationTests: XCTestCase {
+    /// Anyone still pinned to a removed engine must land on a real one:
+    /// a Picker whose selection matches no tag renders a blank row.
+    func testRemovedEnginesFallBack() {
+        XCTAssertEqual(SessionManager.migratedModelChoice("gemma"), "turbo")
+        XCTAssertEqual(SessionManager.migratedModelChoice("litert"), "turbo")
+        XCTAssertEqual(SessionManager.migratedModelChoice(nil), "turbo")
+        XCTAssertEqual(SessionManager.migratedModelChoice(""), "turbo")
+    }
+
+    func testShippingEnginesSurvive() {
+        for choice in SessionManager.modelChoices {
+            XCTAssertEqual(SessionManager.migratedModelChoice(choice), choice)
+        }
+        // Guard the list itself: every tag the picker offers must be here.
+        XCTAssertEqual(SessionManager.modelChoices, ["turbo", "accurate", "apple"])
+    }
+}
