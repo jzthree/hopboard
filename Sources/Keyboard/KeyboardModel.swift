@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
-// NOTE: this file must never import llama — the keyboard extension links
-// neither WhisperKit nor llama.cpp; all inference lives in the app.
+// NOTE: the keyboard extension links no inference framework at all (not
+// even WhisperKit) — every model runs in the app, on the app's memory.
 
 @MainActor
 final class KeyboardModel: ObservableObject {
@@ -36,7 +36,7 @@ final class KeyboardModel: ObservableObject {
     /// makes the recording state unmissable.
     @Published private(set) var recordingStartedAt: Date?
     /// When transcribing began — a visible elapsed timer distinguishes
-    /// "slow" (Gemma grinding) from "stuck".
+    /// "slow" (a long dictation) from "stuck".
     @Published private(set) var transcribingStartedAt: Date?
 
     private weak var controller: KeyboardViewController?

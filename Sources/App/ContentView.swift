@@ -6,10 +6,6 @@ struct ContentView: View {
     @EnvironmentObject private var session: SessionManager
     @State private var copiedResultID: UUID?
     @AppStorage(SessionManager.modelKey) private var modelChoice = "turbo"
-    @AppStorage(SessionManager.gemmaThinkingKey) private var gemmaThinking = false
-    @AppStorage(SessionManager.gemmaThinkingBudgetKey) private var gemmaThinkingBudget = 48
-    @AppStorage(SessionManager.gemmaCustomInstructionKey) private var gemmaCustomInstruction = ""
-    @AppStorage(SessionManager.litertVariantKey) private var litertVariant = "e2b"
     @AppStorage(SessionManager.vocabularyKey) private var vocabulary = ""
     @AppStorage("flow.onboarded") private var onboarded = false
     @State private var showOnboarding = false
@@ -300,20 +296,6 @@ struct ContentView: View {
                     }
                     .tag("apple")
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Gemma 4 (experimental)")
-                    Text("audio LLM · styled tone, punctuated Chinese · 4.1 GB")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .tag("gemma")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Gemma 4 LiteRT (experimental)")
-                    Text("same model, Google's runtime · QAT quant · 2.6 GB")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .tag("litert")
             }
             .pickerStyle(.navigationLink)
             .onChange(of: modelChoice) { _, _ in
@@ -346,58 +328,6 @@ struct ContentView: View {
                                value: session.favoriteLanguages
                                    .map { Self.languageDisplayName($0) }
                                    .joined(separator: " · "))
-            }
-            if modelChoice == "gemma" || modelChoice == "litert" {
-                if modelChoice == "litert" {
-                    Picker("Size", selection: $litertVariant) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("E2B")
-                            Text("2.6 GB · faster")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .tag("e2b")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("E4B")
-                            Text("3.7 GB · more accurate, slower")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .tag("e4b")
-                    }
-                    .pickerStyle(.navigationLink)
-                    .onChange(of: litertVariant) { _, _ in
-                        // The new size loads on the next session start.
-                        session.endSession()
-                    }
-                }
-                // Thinking knobs are llama.cpp-path only: LiteRT's shipped
-                // binaries predate the thinking API, so showing the controls
-                // there would be showing switches wired to nothing.
-                if modelChoice == "gemma" {
-                    Toggle("Gemma thinking", isOn: $gemmaThinking)
-                    if gemmaThinking {
-                        Picker("Thinking budget", selection: $gemmaThinkingBudget) {
-                            Text("Brief · 48 tokens").tag(48)
-                            Text("Medium · 160 tokens").tag(160)
-                            Text("Unlimited").tag(0)
-                        }
-                    }
-                }
-                NavigationLink {
-                    GemmaPromptEditor(
-                        defaultInstruction: GemmaEngine.instruction(
-                            language: session.language, tone: session.tone,
-                            vocabulary: FlowVocabulary.current()),
-                        // LiteRT applies Gemma's template inside the runtime,
-                        // so the llama.cpp assembly preview would be a lie.
-                        showsAssembledPrompt: modelChoice == "gemma")
-                } label: {
-                    LabeledContent("Prompt",
-                                   value: gemmaCustomInstruction
-                                       .trimmingCharacters(in: .whitespacesAndNewlines)
-                                       .isEmpty ? "Default" : "Custom")
-                }
             }
         } header: {
             Text("Dictation")
@@ -604,80 +534,6 @@ struct LevelMeter: View {
     private func barScale(_ weight: CGFloat) -> CGFloat {
         guard active else { return 0.25 }
         return max(0.15, min(1, 0.2 + CGFloat(level) * weight))
-    }
-}
-
-/// Advanced mode: see and edit the exact instruction Gemma receives.
-/// The "exact prompt" preview renders GemmaEngine.assemblePrompt — the
-/// same function transcribe() uses — so it can never drift from reality.
-struct GemmaPromptEditor: View {
-    /// The built-in instruction for the currently pinned language + tone,
-    /// shown and restored by Reset.
-    let defaultInstruction: String
-    /// The llama.cpp engine assembles the template itself, so the exact
-    /// prompt is showable; LiteRT templates inside the runtime, so for it
-    /// only the instruction is ours to show.
-    var showsAssembledPrompt = true
-
-    @AppStorage(SessionManager.gemmaCustomInstructionKey) private var custom = ""
-    @AppStorage(SessionManager.gemmaThinkingKey) private var thinking = false
-    @State private var text = ""
-
-    private var trimmed: String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    /// Mirrors SessionManager.gemmaCustomInstruction(): blank means default.
-    private var isCustom: Bool { !trimmed.isEmpty && trimmed != defaultInstruction }
-    private var effectiveInstruction: String {
-        isCustom ? trimmed : defaultInstruction
-    }
-
-    var body: some View {
-        List {
-            Section {
-                TextEditor(text: $text)
-                    .frame(minHeight: 140)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .onChange(of: text) { _, _ in
-                        custom = isCustom ? trimmed : ""
-                    }
-                Button("Reset to default") {
-                    text = defaultInstruction
-                    custom = ""
-                }
-                .disabled(!isCustom)
-            } header: {
-                Text("Instruction · \(isCustom ? "custom" : "default")")
-            } footer: {
-                Text("A custom instruction replaces the built-in one for every dictation, so language and tone stop shaping the prompt.")
-            }
-            if showsAssembledPrompt {
-                Section {
-                    Text(GemmaEngine.assemblePrompt(instruction: effectiveInstruction,
-                                                    thinking: thinking))
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                } header: {
-                    Text("Exact prompt sent to Gemma")
-                } footer: {
-                    Text("The placeholder is your recording.")
-                }
-            } else {
-                Section {
-                    Text("LiteRT applies Gemma's template itself.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .navigationTitle("Gemma Prompt")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            let saved = custom.trimmingCharacters(in: .whitespacesAndNewlines)
-            text = saved.isEmpty ? defaultInstruction : saved
-        }
     }
 }
 

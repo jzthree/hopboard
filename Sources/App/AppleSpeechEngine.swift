@@ -2,6 +2,25 @@ import AVFoundation
 import Foundation
 import Speech
 
+/// Cross-isolation abort switch: settable while an engine actor is busy
+/// inside a transcription (an actor message couldn't be processed until
+/// too late).
+final class AbortFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func set(_ newValue: Bool) { lock.lock(); value = newValue; lock.unlock() }
+    func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
+}
+
+/// Stage breadcrumb an engine writes as it works, readable from any
+/// isolation — it is what the timeout banner names.
+final class DiagBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = "no attempt yet"
+    func set(_ newValue: String) { lock.lock(); value = newValue; lock.unlock() }
+    func get() -> String { lock.lock(); defer { lock.unlock() }; return value }
+}
+
 /// Apple's iOS 26 SpeechTranscriber — the system model behind Notes and
 /// Voice Memos live transcription, NOT the old keyboard-dictation stack
 /// (that lineage is DictationTranscriber). Benchmarks put it ~4× lower WER

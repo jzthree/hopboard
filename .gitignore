@@ -6,9 +6,3 @@ Sources/App/Info.plist
 Sources/Keyboard/Info.plist
 HopBoard.entitlements
 HopBoardKeyboard.entitlements
-# llama.xcframework is 802 MB (scripts/fetch_llama.sh restores it), but the
-# vendored LiteRTLM package is small source + a remote binary reference —
-# that one IS committed. (Vendor/* not Vendor/ so the negation can work:
-# git never descends into a directory ignored as a whole.)
-Vendor/*
-!Vendor/LiteRTLM/

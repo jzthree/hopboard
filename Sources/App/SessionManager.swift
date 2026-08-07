@@ -43,8 +43,6 @@ final class SessionManager: ObservableObject {
     private let bus = DarwinBus()
     private let recorder = AudioRecorder()
     private var transcriber: Transcriber?
-    private var gemma: GemmaEngine?
-    private var litert: LiteRTEngine?
     /// Availability-erased storage: a stored property can't be typed with
     /// an @available(iOS 26) class while the target deploys to 17.
     private var appleBox: AnyObject?
@@ -73,15 +71,15 @@ final class SessionManager: ObservableObject {
     static let idleTimeout: TimeInterval = 15 * 60
 
     /// UserDefaults keys: dictation language (whisper code or "auto") and
-    /// model choice ("turbo" | "accurate"). Tone lives in FlowStore
-    /// instead — the keyboard can change it too.
+    /// model choice ("turbo" | "accurate" | "apple"). Tone lives in
+    /// FlowStore instead — the keyboard can change it too.
     static let languageKey = "flow.language"
     static let modelKey = "flow.model"
-    static let gemmaThinkingKey = "flow.gemmaThinking"
-    static let gemmaThinkingBudgetKey = "flow.gemmaThinkingBudget"
-    static let gemmaCustomInstructionKey = "flow.gemmaCustomInstruction"
-    static let litertVariantKey = "flow.litertVariant"
     static let vocabularyKey = FlowVocabulary.defaultsKey
+
+    /// Every model choice this build can actually run. Anything else in
+    /// UserDefaults is a leftover from a removed engine.
+    static let modelChoices = ["turbo", "accurate", "apple"]
 
     /// Everything that happens to a transcript between the engine and the
     /// cursor. Vocabulary goes LAST so its spelling survives tone (very
@@ -91,39 +89,43 @@ final class SessionManager: ObservableObject {
         return FlowVocabulary.apply(styled, terms: FlowVocabulary.current())
     }
 
-    static func litertVariant() -> String {
-        UserDefaults.standard.string(forKey: litertVariantKey) ?? "e2b"
-    }
-
-    /// Advanced mode: a non-blank custom instruction replaces the built-in
-    /// per-language/tone instruction verbatim. Blank = defaults.
-    static func gemmaCustomInstruction() -> String? {
-        let text = UserDefaults.standard.string(forKey: gemmaCustomInstructionKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return text.isEmpty ? nil : text
-    }
-
-    /// Max thought tokens per dictation window (0 = unlimited). Defaults to
-    /// Brief: the ~170-token unlimited thought is checklist boilerplate that
-    /// dominates decode time, and forced-close answers matched unlimited
-    /// answers in harness validation.
-    static func gemmaThinkingBudget() -> Int {
-        (UserDefaults.standard.object(forKey: gemmaThinkingBudgetKey) as? Int) ?? 48
-    }
-
     /// Human name + size of the currently selected model, for download UI.
     static func selectedModelDescription() -> String {
         switch UserDefaults.standard.string(forKey: modelKey) {
         case "accurate": "large-v3 (950 MB)"
-        case "gemma": "Gemma 4 (4.1 GB)"
-        case "litert": litertVariant() == "e4b"
-            ? "Gemma 4 E4B LiteRT (3.7 GB)" : "Gemma 4 E2B LiteRT (2.6 GB)"
         case "apple": "Apple's speech model (system download)"
         default: "large-v3-turbo (626 MB)"
         }
     }
 
+    /// The experimental audio-LLM engines (llama.cpp Gemma, LiteRT) were
+    /// removed: multi-gigabyte downloads that lost to Whisper on accuracy
+    /// and got jetsammed on smaller phones. Point anyone still pinned to
+    /// one at the default, or the model Picker would show a blank row, and
+    /// hand back the gigabytes they downloaded.
+    private static func retireRemovedEngines() {
+        let defaults = UserDefaults.standard
+        if let choice = defaults.string(forKey: modelKey),
+           !modelChoices.contains(choice) {
+            defaults.set("turbo", forKey: modelKey)
+        }
+        for key in ["flow.gemmaThinking", "flow.gemmaThinkingBudget",
+                    "flow.gemmaCustomInstruction", "flow.litertVariant"] {
+            defaults.removeObject(forKey: key)
+        }
+        let documents = FileManager.default.urls(for: .documentDirectory,
+                                                 in: .userDomainMask)[0]
+        let caches = FileManager.default.urls(for: .cachesDirectory,
+                                              in: .userDomainMask)[0]
+        for stale in [documents.appendingPathComponent("gemma4"),
+                      documents.appendingPathComponent("litertlm"),
+                      caches.appendingPathComponent("litertlm-cache")] {
+            try? FileManager.default.removeItem(at: stale)
+        }
+    }
+
     init() {
+        Self.retireRemovedEngines()
         transcripts = store.results
         tone = store.tone
         // Migrate the pre-chip UserDefaults language into the shared store
@@ -151,11 +153,7 @@ final class SessionManager: ObservableObject {
             Task { @MainActor in
                 guard let self, self.state == .idle else { return }
                 let transcriber = self.transcriber
-                let gemma = self.gemma
-                let litert = self.litert
                 Task { await transcriber?.unload() }
-                Task { await gemma?.unload() }
-                Task { await litert?.unload() }
                 self.unloadAppleEngine()
             }
         }
@@ -219,32 +217,15 @@ final class SessionManager: ObservableObject {
         startHeartbeat()
 
         let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
-        if choice == "gemma" {
-            // Experimental audio-LLM path; the other engines' weights are
-            // freed — one resident model at a time.
-            if let transcriber { Task { await transcriber.unload() } }
-            if let litert { Task { await litert.unload() } }
-            unloadAppleEngine()
-            let gemma = self.gemma ?? GemmaEngine { [weak self] modelState in
-                Task { @MainActor in self?.applyModelState(modelState) }
-            }
-            self.gemma = gemma
-            gemma.abortFlag.set(false)
-            await gemma.load()
-            guard epoch == sessionEpoch else { return }
-            guard await gemma.isReady else {
-                publish(.idle)
-                return
-            }
-        } else if choice == "apple" {
+        if choice == "apple" {
             guard #available(iOS 26.0, *) else {
                 lastError = "Apple's transcriber needs iOS 26."
                 publish(.idle)
                 return
             }
+            // One resident model at a time — the other engine's weights go
+            // back to the system before this one loads.
             if let transcriber { Task { await transcriber.unload() } }
-            if let gemma { Task { await gemma.unload() } }
-            if let litert { Task { await litert.unload() } }
             let apple = self.apple ?? AppleSpeechEngine { [weak self] modelState in
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
@@ -256,24 +237,7 @@ final class SessionManager: ObservableObject {
                 publish(.idle)
                 return
             }
-        } else if choice == "litert" {
-            if let transcriber { Task { await transcriber.unload() } }
-            if let gemma { Task { await gemma.unload() } }
-            unloadAppleEngine()
-            let litert = self.litert ?? LiteRTEngine { [weak self] modelState in
-                Task { @MainActor in self?.applyModelState(modelState) }
-            }
-            self.litert = litert
-            litert.abortFlag.set(false)
-            await litert.load(variant: Self.litertVariant())
-            guard epoch == sessionEpoch else { return }
-            guard await litert.isReady else {
-                publish(.idle)
-                return
-            }
         } else {
-            if let gemma { Task { await gemma.unload() } }
-            if let litert { Task { await litert.unload() } }
             unloadAppleEngine()
             let transcriber = self.transcriber ?? Transcriber { [weak self] modelState in
                 Task { @MainActor in self?.applyModelState(modelState) }
@@ -308,18 +272,8 @@ final class SessionManager: ObservableObject {
         // chance to clip a word and throws away the context the model uses
         // to decide spelling and punctuation. Give it the whole dictation
         // (one window only past two minutes) and let it think once.
-        // Gemma's 12 s window is a latency/memory choice, NOT a batch limit:
-        // audio tokenizes at ~25 tok/s (34 s = ~850 tokens, evals fine even
-        // at n_batch 1024 on the Mac harness — the old device -3 was the
-        // background-Metal failure, misread as overflow). Shorter windows
-        // bound the post-stop tail and keep CPU bursts small while
-        // backgrounded; n_ctx 4096 could take ~2 min per call if we ever
-        // want fewer seams. Whisper keeps its native 30 s.
-        switch choice {
-        case "gemma", "litert": recorder.windowSeconds = 12
-        case "apple": recorder.windowSeconds = 120
-        default: recorder.windowSeconds = 30
-        }
+        // Whisper keeps its native 30 s.
+        recorder.windowSeconds = choice == "apple" ? 120 : 30
         do {
             try recorder.start()
         } catch {
@@ -336,8 +290,6 @@ final class SessionManager: ObservableObject {
     func endSession(reason: String? = nil) {
         guard state != .idle else { return }
         sessionEpoch += 1
-        gemma?.abortFlag.set(true)
-        litert?.abort()
         if #available(iOS 26.0, *) { apple?.abortFlag.set(true) }
         recorder.stop()
         heartbeatTimer?.invalidate()
@@ -435,28 +387,6 @@ final class SessionManager: ObservableObject {
     private func transcribeSamples(_ samples: [Float]) async throws -> String {
         let language: String? = currentLanguage()
         switch UserDefaults.standard.string(forKey: Self.modelKey) {
-        case "gemma" where gemma != nil:
-            let gemma = gemma!
-            let text = try await gemma.transcribe(
-                samples, language: language, tone: store.tone,
-                thinking: UserDefaults.standard.bool(forKey: Self.gemmaThinkingKey),
-                thinkingBudget: Self.gemmaThinkingBudget(),
-                customInstruction: Self.gemmaCustomInstruction())
-            if text.isEmpty, samples.count > 16000 {
-                // A second of real audio should never transcribe to nothing
-                // — surface what the engine actually did.
-                lastError = "Gemma returned nothing — \(gemma.diag.get())"
-            }
-            return text
-        case "litert" where litert != nil:
-            let litert = litert!
-            let text = try await litert.transcribe(
-                samples, language: language, tone: store.tone,
-                customInstruction: Self.gemmaCustomInstruction())
-            if text.isEmpty, samples.count > 16000 {
-                lastError = "LiteRT returned nothing — \(litert.diag.get())"
-            }
-            return text
         case "apple":
             guard #available(iOS 26.0, *), let apple else { return "" }
             // No empty-result banner here (Whisper parity): a quiet or
@@ -472,8 +402,6 @@ final class SessionManager: ObservableObject {
     /// Which engine's breadcrumb to blame in the timeout banner.
     private func engineStage() -> String {
         switch UserDefaults.standard.string(forKey: Self.modelKey) {
-        case "gemma": gemma?.diag.get() ?? "gemma engine"
-        case "litert": litert?.diag.get() ?? "litert engine"
         case "apple":
             if #available(iOS 26.0, *) { apple?.diag.get() ?? "apple engine" }
             else { "apple engine" }
@@ -497,8 +425,8 @@ final class SessionManager: ObservableObject {
         let epoch = sessionEpoch
         Task {
             let prefix = await previous?.value ?? ""
-            // Watchdog: engines (Gemma especially) can grind for minutes.
-            // After 90 s release the keyboard; if the engine eventually
+            // Watchdog: a wedged engine can grind far past its usual
+            // seconds. After 90 s release the keyboard; if the engine
             // finishes, the text arrives as a late result — the keyboard
             // offers it as an Insert pill instead of losing it.
             // Errors must surface, not vanish into try? — a throwing engine
@@ -631,7 +559,7 @@ final class SessionManager: ObservableObject {
             store.modelStatus = "Downloading \(Int(fraction * 100))%"
         case .loading:
             let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
-            if choice == "gemma" || choice == "litert" || choice == "apple" {
+            if choice == "apple" {
                 loadingLabel = "Loading model"
             } else {
                 let model = choice == "accurate" ? Transcriber.accurateModel : Transcriber.turboModel

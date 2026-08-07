@@ -27,8 +27,8 @@ final class AudioRecorder {
 
     /// Long dictations roll out in windows, cut at the quietest 200 ms in
     /// the last few seconds to avoid splitting mid-word. 30 s is Whisper's
-    /// native span; Gemma's audio encoder needs shorter chunks (12 s) to
-    /// stay inside device batch limits — set per session.
+    /// native span; Apple's long-form transcriber wants far longer — set
+    /// per session by whichever engine is running.
     var windowSeconds = 30
     static let windowSearchFrames = Int(targetSampleRate) * 5
 
