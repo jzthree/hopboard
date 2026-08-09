@@ -55,9 +55,22 @@ final class KeyboardModel: ObservableObject {
         /// Folded tail of what we inserted — the only evidence that OUR
         /// text is what landed.
         let tail: String
+        /// The context as it read the instant BEFORE we typed. Without it a
+        /// field that already ended with our tail confirms itself.
+        let before: String?
         let at: Date
+        /// The first poll that read as landed. A verdict is only final once
+        /// it survives — see holdSeconds.
+        var confirmedAt: Date?
     }
     private var insertProbe: Probe?
+    /// How long a positive reading must HOLD before the dictation is
+    /// retired. A host with its own state (a web form, a React Native or
+    /// Flutter field) accepts insertText and then re-renders the text away;
+    /// sampling once caught the moment in between and called it delivered.
+    private static let holdSeconds: TimeInterval = 0.9
+    /// How long to keep looking before calling an insert swallowed.
+    private static let verdictSeconds: TimeInterval = 2.5
     /// Whether shared-keychain IPC works from this process. Probed, not
     /// inferred from hasFullAccess — the probe is the ground truth.
     private var ipcAvailable = false
@@ -119,6 +132,11 @@ final class KeyboardModel: ObservableObject {
         if state == .recording {
             send(.cancelSegment)
         }
+        // A probe can only be settled by reading the document we typed
+        // into. Once the keyboard leaves, the answer is unknowable — drop it
+        // without a verdict rather than blaming the next field we land in.
+        // The dictation stays unconsumed, so it returns as an Insert pill.
+        insertProbe = nil
     }
 
     // MARK: user actions
@@ -338,43 +356,73 @@ final class KeyboardModel: ObservableObject {
     /// cannot be made inline.
     private func attemptInsert(_ text: String, claiming id: UUID?) {
         guard let controller else { return }
-        let joined = FlowText.smartJoin(before: controller.textBeforeCursor, insertion: text)
+        let before = controller.textBeforeCursor
+        let joined = FlowText.smartJoin(before: before, insertion: text)
         guard !joined.isEmpty else { return }
-        insertProbe = Probe(id: id, tail: FlowText.foldTail(joined), at: Date())
+        insertProbe = Probe(id: id, tail: FlowText.foldTail(joined),
+                            before: before, at: Date())
         controller.insert(joined)
     }
 
     private func verifyInsertIfNeeded() {
-        guard let probe = insertProbe, let controller else { return }
+        guard var probe = insertProbe, let controller else { return }
         let elapsed = Date().timeIntervalSince(probe.at)
         // The host applies the edit and reports the new context on its own
         // schedule; poll for a while before concluding anything.
         guard elapsed >= 0.3 else { return }
-        if landed(probe, controller) {
-            insertProbe = nil
-            if let id = probe.id {
-                store.lastConsumedResultID = id
-                pendingResult = nil
+        let verdict = self.verdict(for: probe, controller)
+        guard verdict.isDelivered else {
+            // Seen once and now gone: the host took the text and undid it.
+            // That is a failure, and an immediate one — no point waiting
+            // out the clock on a document we already watched change back.
+            if probe.confirmedAt != nil {
+                settle(probe, as: .reverted)
+            } else if elapsed >= Self.verdictSeconds {
+                settle(probe, as: verdict)
             }
-            flashInserted()
             return
         }
-        guard elapsed >= 1.5 else { return }   // keep waiting
-        // The host swallowed it. Leave the result unconsumed: the pill
-        // stays, and the text is still one tap from the cursor.
-        insertProbe = nil
+        // Positive, but not yet final: it has to still be true a beat later.
+        guard let since = probe.confirmedAt else {
+            probe.confirmedAt = Date()
+            insertProbe = probe
+            return
+        }
+        guard Date().timeIntervalSince(since) >= Self.holdSeconds else { return }
+        settle(probe, as: verdict)
     }
 
-    /// Did OUR text land? Comparing the context before and after was wrong:
-    /// documentContextBeforeInput arrives asynchronously — it is routinely
-    /// nil right after the keyboard appears and fills in by itself — so any
-    /// "it changed" test reports success for an insert that never happened.
-    /// The honest check is that the context now ENDS with what we inserted.
-    private func landed(_ probe: Probe, _ controller: KeyboardViewController) -> Bool {
-        FlowText.insertLanded(contextAfter: controller.textBeforeCursor,
-                              insertedTail: probe.tail,
-                              isSecure: controller.documentIsSecure,
-                              hasText: controller.documentHasText)
+    /// What the document says about our insert right now. Comparing the
+    /// context before and after was wrong — documentContextBeforeInput
+    /// arrives asynchronously, so any "it changed" test reports success for
+    /// an insert that never happened. The honest check is that the context
+    /// now ENDS with what we inserted, and grew to do it.
+    private func verdict(for probe: Probe,
+                         _ controller: KeyboardViewController) -> InsertVerdict {
+        FlowText.insertVerdict(contextBefore: probe.before,
+                               contextAfter: controller.textBeforeCursor,
+                               insertedTail: probe.tail,
+                               isSecure: controller.documentIsSecure,
+                               hasText: controller.documentHasText)
+    }
+
+    /// Close out a probe: record what happened either way, and retire the
+    /// dictation only on a delivery. A failure leaves the result unconsumed,
+    /// so the pill stays and the text is one tap from the cursor.
+    private func settle(_ probe: Probe, as verdict: InsertVerdict) {
+        insertProbe = nil
+        if let id = probe.id {
+            store.record(FlowDelivery(id: id, verdict: verdict,
+                                      at: Date().timeIntervalSince1970))
+            // Wake the app so its history shows the verdict without waiting
+            // for the next command.
+            bus.post(Flow.commandNotification)
+            guard verdict.isDelivered else { return }
+            store.lastConsumedResultID = id
+            pendingResult = nil
+        }
+        guard verdict.isDelivered else { return }
+        flashInserted()
     }
 
     private func updatePendingResult() {

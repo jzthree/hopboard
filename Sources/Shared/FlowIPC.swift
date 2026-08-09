@@ -52,6 +52,42 @@ struct FlowResult: Codable, Identifiable, Equatable {
     let finishedAt: Double
 }
 
+/// What reading the host document told us about an insert. Everything but
+/// `reverted` comes from `FlowText.insertVerdict`; `reverted` is temporal —
+/// only the keyboard, watching across polls, can see a host accept the text
+/// and then take it back.
+enum InsertVerdict: String, Codable {
+    case landed              // the cursor now sits right after our text
+    case landedUnverifiable  // a secure field: it has text, we can't read it
+    case reverted            // it appeared, then the host's own state won
+    case notAtCursor         // the field's text does not end with ours
+    case noField             // nothing focused; insertText went nowhere
+
+    /// Whether the dictation may be retired. Unverifiable counts — refusing
+    /// to ever finish in a password field would leave a permanent pill.
+    var isDelivered: Bool { self == .landed || self == .landedUnverifiable }
+
+    /// Shown against the dictation in the app's history.
+    var summary: String {
+        switch self {
+        case .landed: "Inserted at the cursor"
+        case .landedUnverifiable: "Inserted — the field wouldn't confirm it"
+        case .reverted: "The app took it, then removed it"
+        case .notAtCursor: "The app didn't accept it"
+        case .noField: "No text field was focused"
+        }
+    }
+}
+
+/// What became of one dictation after the keyboard typed it. Recorded so a
+/// delivery that silently went nowhere can be SEEN rather than guessed at.
+struct FlowDelivery: Codable, Identifiable, Equatable {
+    /// The result this describes.
+    let id: UUID
+    let verdict: InsertVerdict
+    let at: Double
+}
+
 /// Minimal key→Data storage the two processes share.
 protocol FlowBackend {
     func data(forKey key: String) -> Data?
@@ -127,6 +163,7 @@ final class FlowStore {
         static let command = "flow.command"
         static let results = "flow.results"
         static let consumed = "flow.lastConsumedResult"
+        static let deliveries = "flow.deliveries"
         static let micLevel = "flow.micLevel"
         static let keyboardSeen = "flow.keyboardSeen"
         static let modelStatus = "flow.modelStatus"
@@ -252,6 +289,31 @@ final class FlowStore {
     func clearResults() {
         backend.removeValue(forKey: Key.results)
         backend.removeValue(forKey: Key.consumed)
+        backend.removeValue(forKey: Key.deliveries)
+    }
+
+    /// The keyboard's verdict on each dictation it typed (newest last),
+    /// capped like results — a breadcrumb trail, not a log. The app reads
+    /// them so "it said it inserted and nothing appeared" stops being a
+    /// story and becomes a record.
+    private(set) var deliveries: [FlowDelivery] {
+        get {
+            guard let data = backend.data(forKey: Key.deliveries),
+                  let stored = try? decoder.decode([FlowDelivery].self, from: data)
+            else { return [] }
+            return stored
+        }
+        set {
+            if let data = try? encoder.encode(newValue.suffix(20)) {
+                backend.set(data, forKey: Key.deliveries)
+            }
+        }
+    }
+
+    /// One record per dictation: a re-insert from the pill replaces the
+    /// earlier verdict rather than stacking a second one.
+    func record(_ delivery: FlowDelivery) {
+        deliveries = deliveries.filter { $0.id != delivery.id } + [delivery]
     }
 
     var lastConsumedResultID: UUID? {
@@ -407,22 +469,42 @@ enum FlowText {
 
     /// Did OUR text land in the host document?
     ///
-    /// Comparing the context before and after the insert was WRONG, twice
-    /// over: documentContextBeforeInput is delivered asynchronously by the
-    /// host — routinely nil just after the keyboard appears, then filling
-    /// in by itself — so "it changed" reported success for inserts that
-    /// never happened, and the dictation was marked delivered while the
-    /// document stayed empty. The only honest evidence is that the context
-    /// now ENDS with what we inserted.
-    static func insertLanded(contextAfter: String?, insertedTail: String,
-                             isSecure: Bool, hasText: Bool) -> Bool {
-        // Password fields withhold the context entirely; nothing to read.
-        if isSecure { return true }
-        // Nothing alphanumeric to look for (a lone "。"): fall back to
-        // whether the document has any text at all.
-        guard !insertedTail.isEmpty else { return hasText }
-        guard let after = contextAfter else { return false }
-        return foldTail(after).hasSuffix(insertedTail)
+    /// Comparing the context before and after the insert was WRONG: the
+    /// host delivers documentContextBeforeInput asynchronously — routinely
+    /// nil just after the keyboard appears, then filling in by itself — so
+    /// "it changed" reported success for inserts that never happened. The
+    /// only honest evidence is that the context now ENDS with what we
+    /// inserted, and even that has to be qualified:
+    ///
+    /// - a field that ALREADY ended with our folded tail confirms itself
+    ///   (dictate "yes" twice, the second one never lands, both read as
+    ///   delivered), so there the only evidence left is that it grew;
+    /// - a secure field withholds context but cannot hide that it now
+    ///   holds text — trusting it unconditionally made every swallowed
+    ///   insert into a password field read as a success.
+    ///
+    /// Returns the reason, not a Bool: the reason is recorded per dictation
+    /// so a delivery that goes nowhere can be READ AFTERWARDS instead of
+    /// guessed at. This decision has been wrong twice; the third fix ships
+    /// with the evidence attached.
+    static func insertVerdict(contextBefore: String?, contextAfter: String?,
+                              insertedTail: String, isSecure: Bool,
+                              hasText: Bool) -> InsertVerdict {
+        if isSecure { return hasText ? .landedUnverifiable : .noField }
+        // Nothing alphanumeric to look for (a lone "。"): the only reading
+        // left is whether the document holds any text at all.
+        guard !insertedTail.isEmpty else {
+            return hasText ? .landedUnverifiable : .noField
+        }
+        guard let after = contextAfter else {
+            return hasText ? .notAtCursor : .noField
+        }
+        guard foldTail(after).hasSuffix(insertedTail) else { return .notAtCursor }
+        if let before = contextBefore, foldTail(before).hasSuffix(insertedTail),
+           after.count <= before.count {
+            return .notAtCursor
+        }
+        return .landed
     }
 
     /// Joins dictated text onto what precedes the cursor: a leading space

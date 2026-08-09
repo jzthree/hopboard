@@ -10,6 +10,10 @@ final class SessionManager: ObservableObject {
     @Published private(set) var state: SessionState = .idle
     @Published private(set) var modelState: Transcriber.State = .unloaded
     @Published private(set) var transcripts: [FlowResult] = []
+    /// What the keyboard saw happen to each dictation it typed, by result
+    /// id. A dictation can reach history and still never reach the cursor;
+    /// this is how the app can say which, instead of the user finding out.
+    @Published private(set) var deliveries: [UUID: FlowDelivery] = [:]
     @Published private(set) var micLevel: Float = 0
     /// "Optimizing for Neural Engine" vs plain "Loading model" — they are
     /// different waits (minutes vs seconds) and are labeled as such.
@@ -178,7 +182,14 @@ final class SessionManager: ObservableObject {
     /// updates the moment the user returns from Settings.
     @Published private(set) var keyboardEnabled = false
 
+    private func refreshDeliveries() {
+        let latest = Dictionary(store.deliveries.map { ($0.id, $0) },
+                                uniquingKeysWith: { _, newer in newer })
+        if deliveries != latest { deliveries = latest }
+    }
+
     func refreshSetupState() {
+        refreshDeliveries()
         micPermission = AVAudioApplication.shared.recordPermission
         let keyboards = UserDefaults.standard.array(forKey: "AppleKeyboards") as? [String] ?? []
         keyboardEnabled = keyboards.contains { $0.contains("io.zhoulab.hopboard.keyboard") }
@@ -525,7 +536,9 @@ final class SessionManager: ObservableObject {
 
     private func drainCommands() {
         // The keyboard's chips write straight to the store and ping this
-        // notification; keep the app UI in sync even with no command.
+        // notification; keep the app UI in sync even with no command. So
+        // does an insert verdict — it arrives as a ping with no command.
+        refreshDeliveries()
         if tone != store.tone { tone = store.tone }
         let storedLanguage = store.language
         if !storedLanguage.isEmpty, language != storedLanguage { language = storedLanguage }

@@ -423,10 +423,19 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(result.text.isEmpty ? "(no speech detected)" : result.text)
                                     .foregroundStyle(result.text.isEmpty ? .secondary : .primary)
-                                Text(Date(timeIntervalSince1970: result.finishedAt),
-                                     format: .dateTime.hour().minute())
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                HStack(spacing: 6) {
+                                    Text(Date(timeIntervalSince1970: result.finishedAt),
+                                         format: .dateTime.hour().minute())
+                                    if let verdict = session.deliveries[result.id]?.verdict {
+                                        Text("·")
+                                        Text(verdict.summary)
+                                            .foregroundStyle(verdict.isDelivered
+                                                             ? AnyShapeStyle(.tertiary)
+                                                             : AnyShapeStyle(.orange))
+                                    }
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                             }
                             Spacer(minLength: 0)
                             if !result.text.isEmpty {
