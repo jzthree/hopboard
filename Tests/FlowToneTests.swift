@@ -42,6 +42,44 @@ final class AppleSpeechEngineTests: XCTestCase {
     }
 }
 
+final class ModelCacheTests: XCTestCase {
+    private let variant = "test-variant_1MB"
+    private var folder: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml")
+            .appendingPathComponent("openai_whisper-\(variant)")
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: folder)
+        super.tearDown()
+    }
+
+    /// Skipping the download hinges on this answer being right. Too eager
+    /// and a half-finished folder is handed to WhisperKit, which throws on
+    /// load — turning a resumable download into "Model failed to load".
+    func testPartialDownloadIsNotMistakenForACachedModel() throws {
+        let manager = FileManager.default
+        XCTAssertNil(Transcriber.cachedModelFolder(for: variant), "nothing on disk yet")
+
+        try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertNil(Transcriber.cachedModelFolder(for: variant), "folder alone proves nothing")
+
+        for name in ["MelSpectrogram", "AudioEncoder"] {
+            try manager.createDirectory(at: folder.appendingPathComponent("\(name).mlmodelc"),
+                                        withIntermediateDirectories: true)
+        }
+        XCTAssertNil(Transcriber.cachedModelFolder(for: variant), "two of three is incomplete")
+
+        try manager.createDirectory(at: folder.appendingPathComponent("TextDecoder.mlmodelc"),
+                                    withIntermediateDirectories: true)
+        XCTAssertEqual(Transcriber.cachedModelFolder(for: variant)?.lastPathComponent,
+                       folder.lastPathComponent)
+        // A different variant must not match this one's folder.
+        XCTAssertNil(Transcriber.cachedModelFolder(for: Transcriber.turboModel))
+    }
+}
+
 @MainActor
 final class ModelChoiceMigrationTests: XCTestCase {
     /// Anyone still pinned to a removed engine must land on a real one:

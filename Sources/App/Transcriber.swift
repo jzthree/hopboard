@@ -12,6 +12,9 @@ import WhisperKit
 actor Transcriber {
     static let turboModel = "large-v3-v20240930_626MB"
     static let accurateModel = "large-v3_947MB"
+    /// Where both variants come from — and, once fetched, where they live
+    /// under Documents/huggingface/models.
+    static let modelRepo = "argmaxinc/whisperkit-coreml"
     /// The fix for Whisper's Chinese no-punctuation mode. CRITICAL: the
     /// prompt must read like transcript text. Instruction-style prompts
     /// ("请使用标点符号") derail real Chinese audio into subtitle-outro
@@ -65,6 +68,33 @@ actor Transcriber {
         return "flow.aneOptimized.\(model).\(build)"
     }
 
+    /// Where WhisperKit's downloader puts a variant, if it is already fully
+    /// there. Worth finding ourselves: `WhisperKit.download` ALWAYS lists
+    /// the repo over the network first, even when every file is on disk,
+    /// and then reports per-file progress while it re-checks them — so a
+    /// launch with the weights already present announced "Downloading" and
+    /// counted its way up for nothing. Going straight to the folder skips
+    /// the round-trip, and the tokenizer ships inside it, so a cached model
+    /// no longer needs the network to load.
+    static func cachedModelFolder(for model: String) -> URL? {
+        let root = HubApiWrapper().localRepoLocation(HubApiWrapper.Repo(id: modelRepo))
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil) else { return nil }
+        // Folders are named for the variant with a prefix
+        // ("openai_whisper-large-v3-v20240930_626MB") — the same match
+        // download() makes against the remote listing.
+        guard let folder = entries.first(where: { $0.lastPathComponent.contains(model) })
+        else { return nil }
+        // An interrupted download leaves the folder behind with pieces
+        // missing; WhisperKit would throw on load and the app would report
+        // a broken model. Treat incomplete as absent and let download()
+        // repair it — these are the three bundles loadModels requires.
+        return ["MelSpectrogram", "AudioEncoder", "TextDecoder"].allSatisfy {
+            FileManager.default.fileExists(
+                atPath: ModelUtilities.detectModelURL(inFolder: folder, named: $0).path)
+        } ? folder : nil
+    }
+
     func load(model: String) async {
         if pipe != nil, loadedModel == model {
             set(.ready)
@@ -73,13 +103,18 @@ actor Transcriber {
         pipe = nil
         loadedModel = model
         do {
-            set(.downloading(0))
-            let folder = try await WhisperKit.download(
-                variant: model,
-                progressCallback: { [weak self] progress in
-                    let fraction = progress.fractionCompleted
-                    Task { await self?.applyDownloadProgress(fraction) }
-                })
+            let folder: URL
+            if let cached = Self.cachedModelFolder(for: model) {
+                folder = cached
+            } else {
+                set(.downloading(0))
+                folder = try await WhisperKit.download(
+                    variant: model,
+                    progressCallback: { [weak self] progress in
+                        let fraction = progress.fractionCompleted
+                        Task { await self?.applyDownloadProgress(fraction) }
+                    })
+            }
             set(.loading)
             let config = WhisperKitConfig(
                 model: model,
