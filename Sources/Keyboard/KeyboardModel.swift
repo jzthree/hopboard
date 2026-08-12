@@ -144,11 +144,14 @@ final class KeyboardModel: ObservableObject {
     func micTapped() {
         switch state {
         case .ready:
-            // Starting a new dictation supersedes an unclaimed old one.
-            if let pending = pendingResult {
-                store.lastConsumedResultID = pending.id
-                pendingResult = nil
-            }
+            // An unclaimed dictation is NOT retired here. Marking it
+            // consumed on the way into a recording meant one stray tap —
+            // and the mic owns the whole row, so strays happen — silently
+            // put the text out of reach of the pill. It doesn't linger
+            // either: once this dictation produces a result, that result
+            // becomes the newest and updatePendingResult stops offering the
+            // old one. Discard the recording instead and the offer returns,
+            // which is what someone who mis-tapped wanted.
             send(.startSegment)
             optimistic = (.recording, Date())
             state = .recording

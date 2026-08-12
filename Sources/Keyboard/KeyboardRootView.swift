@@ -206,6 +206,12 @@ struct KeyboardRootView: View {
                                 .padding(.horizontal, 12)
                                 .frame(height: 38)
                                 .glassPill(tint: FlowBrand.accent)
+                                // Without this the pill's tap target is the
+                                // WORD, not the capsule: padding and glass
+                                // aren't hit-testable, so half of it fell
+                                // through to the full-row mic underneath and
+                                // started a recording instead of inserting.
+                                .contentShape(Capsule())
                         }
                         .buttonStyle(KeyStyle())
                     } else {
