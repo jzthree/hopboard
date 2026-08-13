@@ -5,10 +5,13 @@ import WhisperKit
 struct ContentView: View {
     @EnvironmentObject private var session: SessionManager
     @State private var copiedResultID: UUID?
-    @AppStorage(SessionManager.modelKey) private var modelChoice = "turbo"
+    @AppStorage(SessionManager.modelKey) private var modelChoice = SessionManager.defaultModelChoice
     @AppStorage(SessionManager.vocabularyKey) private var vocabulary = ""
-    @AppStorage("flow.onboarded") private var onboarded = false
-    @State private var showOnboarding = false
+    @AppStorage(SessionManager.onboardedKey) private var onboarded = false
+    /// The first-run model question is asked once. Reopening this sheet
+    /// from the toolbar afterwards is help, not a settings prompt.
+    @AppStorage(SessionManager.modelChosenKey) private var modelChosen = false
+    @State private var showIntro = false
     @State private var loadingStart: Date?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -72,7 +75,7 @@ struct ContentView: View {
             .tint(FlowBrand.accent)
             .animation(.snappy, value: session.state)
             .onAppear {
-                if !onboarded { showOnboarding = true }
+                if !onboarded { showIntro = true }
                 session.refreshSetupState()
             }
             .onChange(of: scenePhase) { _, phase in
@@ -87,12 +90,17 @@ struct ContentView: View {
                     loadingStart = nil
                 }
             }
-            .sheet(isPresented: $showOnboarding, onDismiss: { onboarded = true }) {
-                OnboardingSheet()
+            .sheet(isPresented: $showIntro, onDismiss: {
+                onboarded = true
+                // Dismissing without touching the picker IS an answer: it
+                // means "give me the default", which is already selected.
+                modelChosen = true
+            }) {
+                OnboardingSheet(askingForModel: !modelChosen)
             }
             .toolbar {
                 Button {
-                    showOnboarding = true
+                    showIntro = true
                 } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -273,20 +281,24 @@ struct ContentView: View {
             }
             .pickerStyle(.navigationLink)
             Picker("Model", selection: $modelChoice) {
+                // The default says what it is; the alternative says what it
+                // costs. Listing Chinese punctuation as a FEATURE of the
+                // default would be backwards — the default is meant to just
+                // work, so the caveat belongs on the model that drops it.
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Fast")
-                    Text("large-v3-turbo · recommended")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .tag("turbo")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Accurate")
-                    Text("large-v3 · adds Chinese punctuation · 950 MB")
+                    Text("Recommended")
+                    Text("large-v3 · best quality · 950 MB")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .tag("accurate")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Fast")
+                    Text("large-v3-turbo · smaller download, but no Chinese punctuation and weaker on noisy or accented speech · 626 MB")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .tag("turbo")
                 if #available(iOS 26.0, *) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Apple (iOS 26)")
@@ -473,11 +485,17 @@ struct ContentView: View {
 /// First-run education: why HopBoard works the way it does. iOS's keyboard
 /// mic ban is the single fact that explains every quirk of the app.
 struct OnboardingSheet: View {
+    /// First run only: the one decision this sheet asks for. It leads,
+    /// rather than sitting below four screens of explanation where the
+    /// toolbar's dismiss button would be reached first.
+    var askingForModel = false
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(SessionManager.modelKey) private var modelChoice = SessionManager.defaultModelChoice
 
     var body: some View {
         NavigationStack {
             List {
+                if askingForModel { modelChoiceSection }
                 Section {
                     row("keyboard.badge.ellipsis",
                         "Keyboards can't hear you",
@@ -492,17 +510,53 @@ struct OnboardingSheet: View {
                         "The orange dot is honest",
                         "iOS shows the mic indicator the whole session, because the mic really is on. End the session from the keyboard (✕) or the app when you're done; it also ends itself after 15 idle minutes.",
                         tint: .orange)
+                } header: {
+                    if askingForModel { Text("How HopBoard works") }
                 } footer: {
-                    Text("Everything is transcribed on-device by Whisper large-v3-turbo. Audio never leaves your iPhone.")
+                    Text("Everything is transcribed on-device. Audio never leaves your iPhone.")
                 }
             }
-            .navigationTitle("How HopBoard works")
+            .navigationTitle(askingForModel ? "Welcome to HopBoard" : "How HopBoard works")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button("Got it") { dismiss() }
+                Button(askingForModel ? "Start" : "Got it") { dismiss() }
                     .bold()
             }
         }
+    }
+
+    private var modelChoiceSection: some View {
+        Section {
+            modelOption("Recommended", tag: SessionManager.defaultModelChoice,
+                        detail: "Whisper large-v3. 950 MB.")
+            modelOption("Fast", tag: "turbo",
+                        detail: "Whisper large-v3-turbo. Half the download and quicker on long dictations, but it can't punctuate Chinese and slips more on noisy or accented speech. 626 MB.")
+        } header: {
+            Text("Choose a model")
+        } footer: {
+            Text("The download starts with your first session. You can switch any time in Settings, and the other model downloads then.")
+        }
+    }
+
+    private func modelOption(_ title: String, tag: String, detail: String) -> some View {
+        Button {
+            modelChoice = tag
+        } label: {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: modelChoice == tag
+                      ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(modelChoice == tag ? FlowBrand.accent : .secondary)
+                    .frame(width: 30)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.subheadline.weight(.semibold))
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func row(_ icon: String, _ title: String, _ body: String, tint: Color = FlowBrand.accent) -> some View {

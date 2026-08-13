@@ -80,17 +80,39 @@ final class SessionManager: ObservableObject {
     static let languageKey = "flow.language"
     static let modelKey = "flow.model"
     static let vocabularyKey = FlowVocabulary.defaultsKey
+    /// First-run bookkeeping, app-side only — the keyboard never reads it.
+    static let onboardedKey = "flow.onboarded"
+    static let modelChosenKey = "flow.modelChosen"
 
     /// Every model choice this build can actually run. Anything else in
     /// UserDefaults is a leftover from a removed engine.
     static let modelChoices = ["turbo", "accurate", "apple"]
 
+    /// What an unset choice means: large-v3, not turbo. Turbo's distilled
+    /// 4-layer decoder cannot take prompts at all, so it has no Chinese
+    /// punctuation, and distillation costs the most on exactly the audio
+    /// where quality is noticed — noise, accents, unusual words. First run
+    /// asks which one you want; this is the answer you get by not choosing.
+    static let defaultModelChoice = "accurate"
+
     /// A stored model choice mapped onto something this build can run. A
     /// Picker whose selection matches no tag renders a BLANK row, so a
     /// leftover "gemma"/"litert" has to be repointed, not tolerated.
     static func migratedModelChoice(_ stored: String?) -> String {
-        guard let stored, modelChoices.contains(stored) else { return "turbo" }
+        guard let stored, modelChoices.contains(stored) else { return defaultModelChoice }
         return stored
+    }
+
+    /// The WhisperKit variant behind a choice. Only "turbo" is the small
+    /// one — anything else that reaches Whisper is large-v3, so a new
+    /// choice added later can't silently inherit the distilled model.
+    static func whisperModel(for choice: String) -> String {
+        choice == "turbo" ? Transcriber.turboModel : Transcriber.accurateModel
+    }
+
+    /// The choice in effect right now, honouring the default.
+    static func currentModelChoice() -> String {
+        migratedModelChoice(UserDefaults.standard.string(forKey: modelKey))
     }
 
     /// Everything that happens to a transcript between the engine and the
@@ -103,10 +125,10 @@ final class SessionManager: ObservableObject {
 
     /// Human name + size of the currently selected model, for download UI.
     static func selectedModelDescription() -> String {
-        switch UserDefaults.standard.string(forKey: modelKey) {
-        case "accurate": "large-v3 (950 MB)"
+        switch currentModelChoice() {
+        case "turbo": "large-v3-turbo (626 MB)"
         case "apple": "Apple's speech model (system download)"
-        default: "large-v3-turbo (626 MB)"
+        default: "large-v3 (950 MB)"
         }
     }
 
@@ -235,7 +257,7 @@ final class SessionManager: ObservableObject {
         // heartbeat made the keyboard flicker to "Start Session" mid-load.
         startHeartbeat()
 
-        let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
+        let choice = Self.currentModelChoice()
         if choice == "apple" {
             guard #available(iOS 26.0, *) else {
                 lastError = "Apple's transcriber needs iOS 26."
@@ -262,9 +284,7 @@ final class SessionManager: ObservableObject {
                 Task { @MainActor in self?.applyModelState(modelState) }
             }
             self.transcriber = transcriber
-            let model = choice == "accurate"
-                ? Transcriber.accurateModel : Transcriber.turboModel
-            await transcriber.load(model: model)
+            await transcriber.load(model: Self.whisperModel(for: choice))
             guard epoch == sessionEpoch else { return }
             guard await transcriber.isReady else {
                 publish(.idle)
@@ -579,12 +599,11 @@ final class SessionManager: ObservableObject {
             // The keyboard row is narrow; the app card names the model.
             store.modelStatus = "Downloading \(Int(fraction * 100))%"
         case .loading:
-            let choice = UserDefaults.standard.string(forKey: Self.modelKey) ?? "turbo"
+            let choice = Self.currentModelChoice()
             if choice == "apple" {
                 loadingLabel = "Loading model"
             } else {
-                let model = choice == "accurate" ? Transcriber.accurateModel : Transcriber.turboModel
-                loadingLabel = Transcriber.hasOptimized(model)
+                loadingLabel = Transcriber.hasOptimized(Self.whisperModel(for: choice))
                     ? "Loading model" : "Optimizing for Neural Engine"
             }
             store.modelStatus = loadingLabel

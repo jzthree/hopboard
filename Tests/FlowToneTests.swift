@@ -85,10 +85,11 @@ final class ModelChoiceMigrationTests: XCTestCase {
     /// Anyone still pinned to a removed engine must land on a real one:
     /// a Picker whose selection matches no tag renders a blank row.
     func testRemovedEnginesFallBack() {
-        XCTAssertEqual(SessionManager.migratedModelChoice("gemma"), "turbo")
-        XCTAssertEqual(SessionManager.migratedModelChoice("litert"), "turbo")
-        XCTAssertEqual(SessionManager.migratedModelChoice(nil), "turbo")
-        XCTAssertEqual(SessionManager.migratedModelChoice(""), "turbo")
+        let fallback = SessionManager.defaultModelChoice
+        XCTAssertEqual(SessionManager.migratedModelChoice("gemma"), fallback)
+        XCTAssertEqual(SessionManager.migratedModelChoice("litert"), fallback)
+        XCTAssertEqual(SessionManager.migratedModelChoice(nil), fallback)
+        XCTAssertEqual(SessionManager.migratedModelChoice(""), fallback)
     }
 
     func testShippingEnginesSurvive() {
@@ -97,5 +98,21 @@ final class ModelChoiceMigrationTests: XCTestCase {
         }
         // Guard the list itself: every tag the picker offers must be here.
         XCTAssertEqual(SessionManager.modelChoices, ["turbo", "accurate", "apple"])
+        // Not choosing means large-v3, and it must be a runnable choice.
+        XCTAssertEqual(SessionManager.defaultModelChoice, "accurate")
+        XCTAssertTrue(SessionManager.modelChoices.contains(SessionManager.defaultModelChoice))
+    }
+
+    /// Only "turbo" may reach the distilled model. A choice added later
+    /// must not inherit it by falling through a two-way conditional —
+    /// turbo cannot take prompts at all, so it silently has no Chinese
+    /// punctuation.
+    func testOnlyTurboMapsToTheDistilledModel() {
+        XCTAssertEqual(SessionManager.whisperModel(for: "turbo"), Transcriber.turboModel)
+        for choice in SessionManager.modelChoices where choice != "turbo" {
+            XCTAssertEqual(SessionManager.whisperModel(for: choice), Transcriber.accurateModel)
+        }
+        XCTAssertEqual(SessionManager.whisperModel(for: "something-new"),
+                       Transcriber.accurateModel)
     }
 }
