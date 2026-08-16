@@ -477,7 +477,24 @@ struct ContentView: View {
                 }
             }
         } footer: {
-            Text("Tap a dictation to copy it. Everything is transcribed on-device; audio never leaves your iPhone.")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Tap a dictation to copy it. Everything is transcribed on-device; audio never leaves your iPhone.")
+                if session.canRetranscribe {
+                    Button {
+                        session.retranscribe()
+                    } label: {
+                        Label("Transcribe the last one again", systemImage: "arrow.clockwise")
+                            .font(.callout)
+                    }
+                    .disabled(session.state != .ready)
+                    // One pass over the whole recording instead of the
+                    // windows the live path stitched, and a warmer decode
+                    // each time — at temperature 0 Whisper is greedy and
+                    // would just hand back the same words.
+                    Text("Runs the audio through again, decoded differently. The result appears here and on the keyboard's Insert button.")
+                        .font(.caption)
+                }
+            }
         }
     }
 }

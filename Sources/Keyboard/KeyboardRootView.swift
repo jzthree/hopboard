@@ -195,9 +195,16 @@ struct KeyboardRootView: View {
                             .padding(.horizontal, 12)
                             .frame(height: 38)
                             .glassPill(tint: .green)
-                    } else if let pending = model.pendingResult {
+                    } else if model.pendingResult != nil {
                         // A dictation that couldn't auto-insert: lingers
                         // until tapped or a new dictation replaces it.
+                        // Beside it, the second chance — a mangled decode is
+                        // worth re-running before it is worth re-speaking.
+                        if model.canRetranscribe {
+                            iconChip("arrow.clockwise", label: "Transcribe again") {
+                                model.retranscribeLast()
+                            }
+                        }
                         Button {
                             model.insertPending()
                         } label: {

@@ -39,7 +39,7 @@ enum SessionState: String {
 
 struct FlowCommand: Codable, Equatable {
     enum Action: String, Codable {
-        case startSegment, stopSegment, cancelSegment, endSession
+        case startSegment, stopSegment, cancelSegment, retranscribe, endSession
     }
     let id: UUID
     let action: Action
@@ -175,6 +175,7 @@ final class FlowStore {
         static let favoriteLanguages = "flow.favLanguages"
         static let favoriteLanguagesCustomized = "flow.favLangCustom"
         static let autoLanguageAllowed = "flow.autoLangAllowed"
+        static let canRetranscribe = "flow.canRetranscribe"
     }
 
     init(backend: FlowBackend = KeychainBackend()) {
@@ -223,6 +224,13 @@ final class FlowStore {
     var micLevel: Float {
         get { Float(double(Key.micLevel)) }
         set { setString(String(newValue), Key.micLevel) }
+    }
+
+    /// Whether the app still holds the last dictation's audio, so the
+    /// keyboard only offers a re-run it can actually honour.
+    var canRetranscribe: Bool {
+        get { string(Key.canRetranscribe) == "true" }
+        set { setString(newValue ? "true" : "false", Key.canRetranscribe) }
     }
 
     var sessionAlive: Bool {

@@ -257,6 +257,7 @@ final class KeyboardModel: ObservableObject {
             return
         }
         tone = store.tone
+        canRetranscribe = store.canRetranscribe
         let storedLanguage = store.language
         language = storedLanguage.isEmpty ? "auto" : storedLanguage
         historyItems = store.results.filter { !$0.text.isEmpty }.reversed()
@@ -345,6 +346,21 @@ final class KeyboardModel: ObservableObject {
         // probe below — failure leaves it unconsumed, so the pill offers it.
         awaitingResultSince = nil
         attemptInsert(result.text, claiming: result.id)
+    }
+
+    /// Whether the app still has the audio to decode again.
+    @Published private(set) var canRetranscribe = false
+
+    /// Ask for the last dictation to be decoded again — Whisper sometimes
+    /// hands back something mangled that a second, warmer pass gets right,
+    /// and re-speaking it is the expensive way to ask. The new text arrives
+    /// as a normal result, so it lands on the pill rather than inserting
+    /// itself behind whatever is already at the cursor.
+    func retranscribeLast() {
+        guard canRetranscribe else { return }
+        send(.retranscribe)
+        optimistic = (.transcribing, Date())
+        state = .transcribing
     }
 
     /// The Insert pill's tap: insert at the cursor and retire the result.

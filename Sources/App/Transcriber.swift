@@ -138,7 +138,12 @@ actor Transcriber {
     /// transcription — this broke every dictation), and without prefill the
     /// prompt is ignored entirely. Both proven against real speech in
     /// scripts/wktest notes; tone styling is post-processing (FlowTone).
-    func transcribe(_ samples: [Float], language: String? = nil) async throws -> String {
+    /// `temperature` 0 is greedy and DETERMINISTIC — the same audio decodes
+    /// to the same text every time, which is why "just run it again" needs
+    /// a nonzero value to be anything but a no-op. Whisper's own remedy for
+    /// a decode that came out wrong is exactly this fallback ladder.
+    func transcribe(_ samples: [Float], language: String? = nil,
+                    temperature: Float = 0) async throws -> String {
         guard let pipe else {
             throw NSError(domain: "HopBoard", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "Model not loaded"])
@@ -153,6 +158,7 @@ actor Transcriber {
         let rms = (energy / Float(samples.count)).squareRoot()
         guard rms > 0.0005 else { return "" }
         var options = DecodingOptions()
+        options.temperature = temperature
         if let language, language != "auto" {
             options.language = language
         } else {

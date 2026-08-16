@@ -70,6 +70,15 @@ final class SessionManager: ObservableObject {
     /// and freed as soon as it finishes.
     private var windowChain: Task<String, Never>?
 
+    /// The audio behind the last dictation, kept so it can be decoded again
+    /// without speaking it again. Bounded by the recorder's own 4-minute
+    /// ceiling — this is ONE dictation (16 kHz mono float ≈ 64 KB/s), not a
+    /// history of them — and dropped when the session ends.
+    private var lastSegmentSamples: [Float] = []
+    /// How many times the last dictation has been re-run, so repeated taps
+    /// climb the temperature ladder instead of asking the same question.
+    private var retranscribeAttempts = 0
+
     /// Sessions end themselves after this long with no dictation, so an
     /// abandoned session doesn't hold the mic (and the orange dot) all day.
     static let idleTimeout: TimeInterval = 15 * 60
@@ -336,6 +345,8 @@ final class SessionManager: ObservableObject {
         idleTimer?.invalidate()
         idleTimer = nil
         windowChain = nil
+        // Megabytes of audio have no owner once the session is over.
+        forgetRetainedAudio()
         if let reason { lastError = reason }
         publish(.idle)
         // The model stays loaded between sessions — reloading on every
@@ -348,6 +359,7 @@ final class SessionManager: ObservableObject {
     func beginSegment() {
         guard state == .ready else { return }
         windowChain = nil
+        forgetRetainedAudio()
         recorder.beginSegment()
         publish(.recording)
         touchIdleTimer()
@@ -358,6 +370,7 @@ final class SessionManager: ObservableObject {
     private func enqueueWindow(_ window: [Float]) {
         guard state == .recording else { return }
         touchIdleTimer()   // a long monologue is activity, not idleness
+        retain(window)
         let previous = windowChain
         let epoch = sessionEpoch
         windowChain = Task { [weak self] in
@@ -367,6 +380,63 @@ final class SessionManager: ObservableObject {
             guard epoch == self?.sessionEpoch else { return prefix }
             let text = (try? await self?.transcribeSamples(window)) ?? ""
             return [prefix, text].filter { !$0.isEmpty }.joined(separator: " ")
+        }
+    }
+
+    /// Keep a copy of what the engine is about to hear. Windows are freed
+    /// by their tasks as they finish, so this is the only place the whole
+    /// dictation exists once the live pass is done.
+    private func retain(_ samples: [Float]) {
+        let cap = Int(AudioRecorder.targetSampleRate) * 240
+        guard lastSegmentSamples.count < cap else { return }
+        lastSegmentSamples.append(contentsOf: samples)
+        store.canRetranscribe = true
+    }
+
+    private func forgetRetainedAudio() {
+        lastSegmentSamples = []
+        retranscribeAttempts = 0
+        store.canRetranscribe = false
+    }
+
+    var canRetranscribe: Bool { !lastSegmentSamples.isEmpty }
+
+    /// Decode the last dictation again, differently. Two things change, and
+    /// both matter: the whole thing goes through in ONE pass rather than the
+    /// windows the live path stitched (every boundary is a chance to clip a
+    /// word and throws away the context the model uses for spelling and
+    /// punctuation), and the temperature climbs on each attempt — at 0 the
+    /// decode is greedy and would hand back the identical text.
+    ///
+    /// The result is OFFERED, never auto-inserted: the text it replaces is
+    /// usually already at the cursor, and appending a second version behind
+    /// the user's back is worse than the bad transcription.
+    func retranscribe() {
+        guard state == .ready, !lastSegmentSamples.isEmpty else { return }
+        retranscribeAttempts += 1
+        let temperature = min(Float(retranscribeAttempts) * 0.2, 1.0)
+        let samples = lastSegmentSamples
+        let tone = store.tone
+        let epoch = sessionEpoch
+        publish(.transcribing)
+        Task {
+            defer { if state == .transcribing { publish(.ready) } }
+            do {
+                let raw = try await transcribeSamples(samples, temperature: temperature)
+                guard epoch == sessionEpoch else { return }
+                let text = Self.polish(raw, tone: tone)
+                guard !text.isEmpty else {
+                    lastError = "Transcribing again produced nothing."
+                    return
+                }
+                store.append(FlowResult(id: UUID(), text: text,
+                                        finishedAt: Date().timeIntervalSince1970))
+                transcripts = store.results
+                bus.post(Flow.stateNotification)
+            } catch {
+                lastError = "Transcribing again failed: \(error.localizedDescription)"
+            }
+            touchIdleTimer()
         }
     }
 
@@ -423,7 +493,8 @@ final class SessionManager: ObservableObject {
         return ["auto"] + codes
     }
 
-    private func transcribeSamples(_ samples: [Float]) async throws -> String {
+    private func transcribeSamples(_ samples: [Float],
+                                   temperature: Float = 0) async throws -> String {
         let language: String? = currentLanguage()
         switch UserDefaults.standard.string(forKey: Self.modelKey) {
         case "apple":
@@ -431,10 +502,12 @@ final class SessionManager: ObservableObject {
             // No empty-result banner here (Whisper parity): a quiet or
             // unintelligible window legitimately transcribes to nothing.
             // Real failures throw, and the timeout banner still names the
-            // engine stage.
+            // engine stage. No temperature knob either — a re-run here
+            // differs only by being one pass instead of stitched windows.
             return try await apple.transcribe(samples, language: language)
         default:
-            return try await transcriber?.transcribe(samples, language: language) ?? ""
+            return try await transcriber?.transcribe(samples, language: language,
+                                                     temperature: temperature) ?? ""
         }
     }
 
@@ -457,13 +530,13 @@ final class SessionManager: ObservableObject {
     func finishSegment() {
         guard state == .recording else { return }
         let tail = recorder.takeSegment()
+        retain(tail)
         publish(.transcribing)
         let tone = store.tone
         let previous = windowChain
         windowChain = nil
         let epoch = sessionEpoch
         Task {
-            let prefix = await previous?.value ?? ""
             // Watchdog: a wedged engine can grind far past its usual
             // seconds. After 90 s release the keyboard; if the engine
             // finishes, the text arrives as a late result — the keyboard
@@ -544,6 +617,8 @@ final class SessionManager: ObservableObject {
         guard state == .recording else { return }
         recorder.cancelSegment()
         windowChain = nil
+        // Discarded on purpose — do not leave it offerable for a re-run.
+        forgetRetainedAudio()
         publish(.ready)
     }
 
@@ -570,6 +645,7 @@ final class SessionManager: ObservableObject {
             case .startSegment: beginSegment()
             case .stopSegment: finishSegment()
             case .cancelSegment: cancelSegment()
+            case .retranscribe: retranscribe()
             case .endSession: endSession()
             }
         }
