@@ -61,6 +61,7 @@ enum InsertVerdict: String, Codable {
     case landedUnverifiable  // a secure field: it has text, we can't read it
     case reverted            // it appeared, then the host's own state won
     case notAtCursor         // the field's text does not end with ours
+    case unreadable          // the host reports no document to read at all
     case noField             // nothing focused; insertText went nowhere
 
     /// Whether the dictation may be retired. Unverifiable counts — refusing
@@ -74,6 +75,7 @@ enum InsertVerdict: String, Codable {
         case .landedUnverifiable: "Inserted — the field wouldn't confirm it"
         case .reverted: "The app took it, then removed it"
         case .notAtCursor: "The app didn't accept it"
+        case .unreadable: "The app won't say — offered instead of assumed"
         case .noField: "No text field was focused"
         }
     }
@@ -496,8 +498,16 @@ enum FlowText {
         guard !insertedTail.isEmpty else {
             return hasText ? .landedUnverifiable : .noField
         }
-        guard let after = contextAfter else {
-            return hasText ? .notAtCursor : .noField
+        // Nothing to read is not the same as reading something that isn't
+        // ours. A terminal is the clear case: SwiftTerm backs the keyboard's
+        // document context with an IME composition buffer it clears, so the
+        // text can be on screen while the context reads empty — and hop-ios
+        // forces hasText true, which used to turn "I can't tell" into the
+        // confident "there's text and it isn't yours". Still not delivered,
+        // so the pill is still offered; it just no longer blames the host
+        // for something we simply could not check.
+        guard let after = contextAfter, !after.isEmpty else {
+            return hasText ? .unreadable : .noField
         }
         guard foldTail(after).hasSuffix(insertedTail) else { return .notAtCursor }
         if let before = contextBefore, foldTail(before).hasSuffix(insertedTail),

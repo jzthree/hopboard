@@ -375,11 +375,16 @@ final class KeyboardModel: ObservableObject {
         guard elapsed >= 0.3 else { return }
         let verdict = self.verdict(for: probe, controller)
         guard verdict.isDelivered else {
-            // Seen once and now gone: the host took the text and undid it.
-            // That is a failure, and an immediate one — no point waiting
-            // out the clock on a document we already watched change back.
             if probe.confirmedAt != nil {
-                settle(probe, as: .reverted)
+                // Seen once and now gone. Only a document we can STILL read,
+                // now ending in something else, is evidence the host undid
+                // the edit. A host that has stopped reporting anything has
+                // told us nothing — and a terminal does exactly that, since
+                // SwiftTerm clears the composition buffer that backs the
+                // keyboard's context while the text sits on screen. Reading
+                // that as a revert is what stopped auto-insert into hop-ios;
+                // absence of evidence is not evidence of reversion.
+                settle(probe, as: verdict == .unreadable ? .landed : .reverted)
             } else if elapsed >= Self.verdictSeconds {
                 settle(probe, as: verdict)
             }

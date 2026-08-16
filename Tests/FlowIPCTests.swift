@@ -148,8 +148,9 @@ final class FlowIPCTests: XCTestCase {
                                tail: inserted, hasText: true), .notAtCursor)
         // Nothing focused: no context at all.
         XCTAssertEqual(verdict(after: nil, tail: inserted, hasText: false), .noField)
-        // A document with text elsewhere but our insert swallowed.
-        XCTAssertEqual(verdict(after: nil, tail: inserted, hasText: true), .notAtCursor)
+        // Claims text but reports no context: unknowable, not a failure.
+        XCTAssertEqual(verdict(after: nil, tail: inserted, hasText: true), .unreadable)
+        XCTAssertEqual(verdict(after: "", tail: inserted, hasText: true), .unreadable)
         // It landed: the context now ends with what we sent.
         XCTAssertEqual(verdict(after: "Before. Hello there, this is a test.",
                                tail: inserted, hasText: true), .landed)
@@ -203,6 +204,24 @@ final class FlowIPCTests: XCTestCase {
         XCTAssertEqual(verdict(after: "开始。", tail: empty, hasText: true),
                        .landedUnverifiable)
         XCTAssertEqual(verdict(after: "", tail: empty, hasText: false), .noField)
+    }
+
+    /// A terminal reports its document from an IME composition buffer that
+    /// it clears, so the context goes from "ends with our text" to empty
+    /// while the text sits on screen. That must not read as the host
+    /// undoing the edit — it is why auto-insert into hop-ios stopped.
+    func testTerminalStyleContextLossIsNotARevert() {
+        let inserted = FlowText.foldTail("deploy the thing")
+        // Right after the insert the buffer still holds it.
+        XCTAssertEqual(verdict(after: "deploy the thing", tail: inserted,
+                               hasText: true), .landed)
+        // A beat later the host has cleared it. hasText stays true because
+        // SwiftTerm-based hosts force it so hold-delete keeps repeating.
+        XCTAssertEqual(verdict(after: "", tail: inserted, hasText: true), .unreadable)
+        // A host that genuinely re-rendered our text away still reads as a
+        // failure: it reports a document, and ours is not in it.
+        XCTAssertEqual(verdict(after: "unrelated text", tail: inserted,
+                               hasText: true), .notAtCursor)
     }
 
     func testDeliveryRecordKeepsOneVerdictPerDictation() {
