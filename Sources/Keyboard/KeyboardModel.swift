@@ -74,6 +74,12 @@ final class KeyboardModel: ObservableObject {
     /// Whether shared-keychain IPC works from this process. Probed, not
     /// inferred from hasFullAccess — the probe is the ground truth.
     private var ipcAvailable = false
+    /// Whether the keyboard is actually on screen. Darwin notifications
+    /// drive refresh() whether it is or not — becameHidden only stops the
+    /// poll timer — so without this a result arriving while the keyboard is
+    /// away gets typed into a document nobody is focused on, which spends
+    /// the one auto-insert that dictation gets.
+    private var isVisible = false
     /// Set when THIS keyboard asked for a transcription; results produced by
     /// the app's own test button are acknowledged but never inserted here.
     /// PERSISTED (extension defaults): the keyboard gets hidden and reshown
@@ -99,6 +105,7 @@ final class KeyboardModel: ObservableObject {
     }
 
     func becameVisible(showsGlobe: Bool) {
+        isVisible = true
         self.showsGlobe = showsGlobe
         controller?.setKeyboardHeight(typingMode ? 216 : 124)
         // NO keychain traffic on the launch path: the keyboard service's
@@ -121,6 +128,7 @@ final class KeyboardModel: ObservableObject {
     }
 
     func becameHidden() {
+        isVisible = false
         pollTimer?.invalidate()
         pollTimer = nil
         showingHistory = false
@@ -268,13 +276,25 @@ final class KeyboardModel: ObservableObject {
         // routine right after an install while the ANE cache rebuilds) used
         // to hit the escape and the consume in the same tick, clearing the
         // waiting marker first and swallowing the result into history.
-        consumeResultIfAny()
-        // Escape hatches for a stranded wait: if the app is back to ready
-        // with nothing for us within 10 s — or 45 s outright — stop waiting.
-        if let since = awaitingResultSince {
-            let waited = Date().timeIntervalSince(since)
-            if waited > 45 || (store.state == .ready && waited > 10) {
-                awaitingResultSince = nil
+        // Only while we are on screen. Typing into a document the user is
+        // not looking at goes nowhere, and the attempt is not free: it
+        // settles the probe, leaves the result unconsumed, and the dictation
+        // comes back as a pill for text that could have inserted itself a
+        // moment later. Holding the wait instead means it lands the instant
+        // the keyboard returns — which is why the same dictation sometimes
+        // inserts and sometimes has to be tapped in.
+        if isVisible {
+            consumeResultIfAny()
+            // Escape hatches for a stranded wait: if the app is back to
+            // ready with nothing for us within 10 s — or 45 s outright —
+            // stop waiting. Checked only while on screen, so a wait can no
+            // longer expire unseen, and the consume above always gets first
+            // refusal on the tick where we return.
+            if let since = awaitingResultSince {
+                let waited = Date().timeIntervalSince(since)
+                if waited > 45 || (store.state == .ready && waited > 10) {
+                    awaitingResultSince = nil
+                }
             }
         }
         updatePendingResult()
