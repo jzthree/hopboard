@@ -235,7 +235,19 @@ final class KeyboardModel: ObservableObject {
 
     func deleteTapped() { controller?.deleteBackwardOnce() }
     func spaceTapped() { controller?.insertSpace() }
-    func returnTapped() { controller?.insertNewline() }
+    /// Return while a dictation is running ENDS it rather than typing a
+    /// newline. Mid-recording a newline is never what was wanted, and the
+    /// key is already under the thumb — reaching back up to the mic surface
+    /// to stop is the awkward part of a one-handed dictation. Stopping is
+    /// all it does: the transcript still arrives and inserts on its own,
+    /// and nothing is submitted on the user's behalf.
+    func returnTapped() {
+        if state == .recording {
+            micTapped()
+            return
+        }
+        controller?.insertNewline()
+    }
 
     func setTyping(_ on: Bool) {
         typingMode = on

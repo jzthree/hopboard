@@ -421,7 +421,10 @@ struct KeyboardRootView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 42)
                 .background(keyBackground)
-            key("return", flexible: true) { model.returnTapped() }
+            // A key that says what it will do: mid-dictation this one ends
+            // the recording rather than typing a newline.
+            key(model.state == .recording ? "stop" : "return",
+                flexible: true) { model.returnTapped() }
             if sessionActive { endKey }
         }
         .frame(height: 42)
