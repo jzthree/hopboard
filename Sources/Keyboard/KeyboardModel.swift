@@ -71,6 +71,12 @@ final class KeyboardModel: ObservableObject {
     private static let holdSeconds: TimeInterval = 0.9
     /// How long to keep looking before calling an insert swallowed.
     private static let verdictSeconds: TimeInterval = 2.5
+    /// How long a dictation the keyboard asked for may still insert ITSELF.
+    /// Past this it is still offered — as a pill — but it must not type
+    /// itself into whatever app happens to be open by then: a wait now
+    /// survives the keyboard being hidden, and a phone can stay locked for
+    /// an hour with a finished transcript waiting behind it.
+    private static let waitBudget: TimeInterval = 45
     /// Whether shared-keychain IPC works from this process. Probed, not
     /// inferred from hasFullAccess — the probe is the ground truth.
     private var ipcAvailable = false
@@ -133,12 +139,17 @@ final class KeyboardModel: ObservableObject {
         pollTimer = nil
         showingHistory = false
         typingMode = false   // the pad is temporary by design
-        // Don't leave the app recording into the void if the user dismissed
-        // the keyboard mid-dictation. A transcription already in flight is
-        // NOT cancelled and awaitingResultSince deliberately survives —
-        // the result inserts when the keyboard next appears (45 s bound).
+        // A recording in progress is ENDED, not thrown away. The keyboard
+        // goes away for reasons that have nothing to do with wanting the
+        // dictation gone — above all the screen locking mid-sentence, which
+        // used to discard everything said up to that moment. Speech becomes
+        // text either way; the text comes back as an Insert pill, or types
+        // itself if you return quickly. Discarding stays where it belongs:
+        // behind the Discard button, which is a decision, not an accident.
         if state == .recording {
-            send(.cancelSegment)
+            send(.stopSegment)
+            awaitingResultSince = Date()
+            state = .transcribing
         }
         // A probe can only be settled by reading the document we typed
         // into. Once the keyboard leaves, the answer is unknowable — drop it
@@ -304,7 +315,7 @@ final class KeyboardModel: ObservableObject {
             // refusal on the tick where we return.
             if let since = awaitingResultSince {
                 let waited = Date().timeIntervalSince(since)
-                if waited > 45 || (store.state == .ready && waited > 10) {
+                if waited > Self.waitBudget || (store.state == .ready && waited > 10) {
                     awaitingResultSince = nil
                 }
             }
@@ -367,6 +378,7 @@ final class KeyboardModel: ObservableObject {
         // Auto-insert is only ever for a dictation THIS keyboard asked for;
         // anything else waits behind an explicit tap on the Insert pill.
         guard let since = awaitingResultSince,
+              Date().timeIntervalSince(since) <= Self.waitBudget,
               result.finishedAt >= since.timeIntervalSince1970 - 1 else { return }
         guard !result.text.isEmpty else {
             // Nothing was said: acknowledge it so the spinner is released.
