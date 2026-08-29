@@ -662,6 +662,13 @@ final class SessionManager: ObservableObject {
         state = new
         store.state = new
         store.heartbeat = Date()
+        // Auto-lock mid-sentence is a real way to lose a dictation, and the
+        // idle timer belongs to whichever app is FRONTMOST. So this holds
+        // the screen awake only while dictating inside HopBoard itself —
+        // during keyboard dictation the foreground app is someone else's
+        // and iOS gives an extension no say at all. That case is covered
+        // instead by ending rather than discarding when the keyboard goes.
+        UIApplication.shared.isIdleTimerDisabled = (new == .recording)
         if new == .idle { heartbeatTimer?.invalidate() }
         bus.post(Flow.stateNotification)
     }
