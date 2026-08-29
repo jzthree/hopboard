@@ -235,6 +235,18 @@ struct KeyboardRootView: View {
                                 model.showingHistory = true
                             }
                         }
+                        // A mangled decode is worth re-running before it is
+                        // worth re-speaking, and you only find out it was
+                        // mangled after reading it — by which point the
+                        // dictation has usually inserted itself and the pill
+                        // this used to hide behind is long gone. It lives
+                        // here for as long as the audio does: until the next
+                        // dictation starts or the session ends.
+                        if model.canRetranscribe {
+                            iconChip("arrow.clockwise", label: "Transcribe again") {
+                                model.retranscribeLast()
+                            }
+                        }
                         // Model, vocabulary, mic mode — the settings worth
                         // reaching mid-dictation without hunting for the app.
                         iconChip("gearshape", label: "Settings") {
