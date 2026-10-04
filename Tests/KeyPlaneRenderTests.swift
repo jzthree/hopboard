@@ -9,11 +9,39 @@ import UIKit
 /// directory and its path printed, so it can actually be looked at.
 @MainActor
 final class KeyPlaneRenderTests: XCTestCase {
-    private func makePlane() -> KeyPlaneView {
-        let plane = KeyPlaneView(frame: CGRect(x: 0, y: 0, width: 393, height: 258))
+    private func makePlane(width: CGFloat = 393,
+                           metrics: KeyboardMetrics? = nil) -> KeyPlaneView {
+        let m = metrics ?? KeyboardMetrics.forWidth(width, idiom: .phone)
+        let plane = KeyPlaneView(frame: CGRect(x: 0, y: 0, width: width,
+                                               height: m.typingHeight))
+        plane.metricsOverride = m
         plane.seedContext("")
         plane.layoutIfNeeded()
         return plane
+    }
+
+    private func render(_ plane: KeyPlaneView, named name: String) throws {
+        let renderer = UIGraphicsImageRenderer(bounds: plane.bounds)
+        let image = renderer.image { _ in
+            plane.drawHierarchy(in: plane.bounds, afterScreenUpdates: true)
+        }
+        let data = try XCTUnwrap(image.pngData())
+        XCTAssertGreaterThan(data.count, 4_000, "\(name) rendered almost nothing")
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("keyplane-\(name).png")
+        try? data.write(to: url)
+        print("KEYPLANE_SNAPSHOT \(url.path)")
+    }
+
+    /// Every shape the keyboard takes, drawn — the numbers for landscape
+    /// and iPad are guesses until somebody looks at them.
+    func testRendersOnEveryDevice() throws {
+        try render(makePlane(), named: "phone-portrait")
+        try render(makePlane(width: 852,
+                             metrics: .forWidth(852, idiom: .phone)),
+                   named: "phone-landscape")
+        try render(makePlane(width: 820, metrics: .forWidth(820, idiom: .pad)),
+                   named: "pad-portrait")
     }
 
     func testEveryKeyIsLaidOutInsideThePlane() {
@@ -32,20 +60,5 @@ final class KeyPlaneRenderTests: XCTestCase {
         }
     }
 
-    func testRenderIsNotBlank() throws {
-        let plane = makePlane()
-        let renderer = UIGraphicsImageRenderer(bounds: plane.bounds)
-        let image = renderer.image { _ in
-            plane.drawHierarchy(in: plane.bounds, afterScreenUpdates: true)
-        }
-        let data = try XCTUnwrap(image.pngData())
-        // A plane that drew nothing still produces a PNG; one that drew 32
-        // keys produces a much bigger one.
-        XCTAssertGreaterThan(data.count, 4_000, "the plane rendered almost nothing")
 
-        let url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("keyplane.png")
-        try? data.write(to: url)
-        print("KEYPLANE_SNAPSHOT \(url.path)")
-    }
 }

@@ -20,6 +20,7 @@ enum KeyPalette {
 
 final class KeyView: UIView {
     private let cap: KeyCap
+    private var isWord = false
     private let label = UILabel()
     private let icon = UIImageView()
 
@@ -54,7 +55,21 @@ final class KeyView: UIView {
         super.layoutSubviews()
         label.frame = bounds
         icon.frame = bounds
-        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: 5).cgPath
+        applyFont()
+        // Radius follows the key: a 5pt corner on an iPad key looks milled
+        // flat, and on a landscape phone key it looks like a pill.
+        let radius = min(max(bounds.height / 9, 4), 9)
+        layer.cornerRadius = radius
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: radius).cgPath
+    }
+
+    /// Type scales with the key. The same 22pt glyph that fills a phone key
+    /// rattles around an iPad one and overflows a landscape one.
+    private func applyFont() {
+        let scale = min(max(bounds.height / 45, 0.8), 1.45)
+        label.font = .systemFont(ofSize: (isWord ? 16 : 22) * scale,
+                                 weight: isWord ? .regular : .light)
+        icon.preferredSymbolConfiguration = .init(pointSize: 17 * scale, weight: .regular)
     }
 
     func apply(title: String?, shiftState symbolName: String?) {
@@ -68,9 +83,8 @@ final class KeyView: UIView {
             label.text = title
             // Letters ride larger than words: "return" has to fit, "q" has
             // to be readable past a thumb.
-            let isWord = (title?.count ?? 0) > 2
-            label.font = .systemFont(ofSize: isWord ? 16 : 22,
-                                     weight: isWord ? .regular : .light)
+            isWord = (title?.count ?? 0) > 2
+            applyFont()
         }
     }
 

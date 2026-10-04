@@ -25,12 +25,20 @@ protocol KeyPlaneDelegate: AnyObject {
 final class KeyPlaneView: UIView {
     weak var delegate: KeyPlaneDelegate?
 
-    /// Headroom above the top row, so a preview bubble has somewhere to go
-    /// — a keyboard extension cannot draw outside its own bounds, so unlike
-    /// the system keyboard the top row's bubble has to live INSIDE. The
-    /// candidate bar shares this strip; bubbles overlay it, as they do on
-    /// the system keyboard.
-    var topInset: CGFloat = 46 { didSet { setNeedsLayout() } }
+    /// Everything about the plane's size is DERIVED from its own width, so
+    /// a rotation or an iPad re-lays it out with nobody pushing a value in.
+    /// Set only by tests, which can render at an iPad's width but cannot
+    /// change a detached view's idiom.
+    var metricsOverride: KeyboardMetrics?
+    var metrics: KeyboardMetrics {
+        metricsOverride
+            ?? KeyboardMetrics.forWidth(bounds.width,
+                                        idiom: traitCollection.userInterfaceIdiom)
+    }
+    /// Headroom above the top row: an extension cannot draw outside its own
+    /// bounds, so unlike the system keyboard the top row's preview bubble
+    /// has to live INSIDE. The candidate bar shares the strip.
+    var topInset: CGFloat { metrics.topInset }
 
     private var keyLayer: KeyLayer = .letters
     private var rows: [KeyRow] = KeyLayout.rows(for: .letters)
@@ -116,8 +124,9 @@ final class KeyPlaneView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        candidates.frame = CGRect(x: 0, y: 0, width: bounds.width, height: topInset - 8)
-        frames = KeyGeometry.frames(rows: rows, in: bounds.size, topInset: topInset)
+        candidates.frame = CGRect(x: 0, y: 0, width: bounds.width,
+                                  height: max(topInset - 8, 0))
+        frames = KeyGeometry.frames(rows: rows, in: bounds.size, metrics: metrics)
         for (rowIndex, row) in keyViews.enumerated() {
             for (colIndex, view) in row.enumerated() {
                 guard rowIndex < frames.count, colIndex < frames[rowIndex].count else { continue }

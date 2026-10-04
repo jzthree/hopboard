@@ -65,11 +65,12 @@ final class KeyLayoutTests: XCTestCase {
 
 final class KeyGeometryTests: XCTestCase {
     private let size = CGSize(width: 393, height: 258)
+    private let phone = KeyboardMetrics.forWidth(393, idiom: .phone)
 
     func testKeysFillTheWidthWithoutOverlapping() {
         for layer in [KeyLayer.letters, .numbers, .symbols] {
             let rows = KeyLayout.rows(for: layer)
-            let frames = KeyGeometry.frames(rows: rows, in: size, topInset: 46)
+            let frames = KeyGeometry.frames(rows: rows, in: size, metrics: phone)
             XCTAssertEqual(frames.count, rows.count)
             for (index, row) in frames.enumerated() {
                 XCTAssertFalse(row.isEmpty)
@@ -89,16 +90,16 @@ final class KeyGeometryTests: XCTestCase {
 
     func testRowsStayBelowTheBubbleStrip() {
         let frames = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
-                                        in: size, topInset: 46)
-        XCTAssertGreaterThanOrEqual(frames[0][0].minY, 46)
+                                        in: size, metrics: phone)
+        XCTAssertGreaterThanOrEqual(frames[0][0].minY, phone.topInset)
         // Clear of the bottom edge, not flush with it.
         XCTAssertLessThan(frames.last!.last!.maxY, size.height)
     }
 
     func testDegenerateSizesProduceNothingRatherThanNaNs() {
         XCTAssertTrue(KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
-                                         in: .zero, topInset: 46).isEmpty)
-        XCTAssertTrue(KeyGeometry.frames(rows: [], in: size, topInset: 46).isEmpty)
+                                         in: .zero, metrics: phone).isEmpty)
+        XCTAssertTrue(KeyGeometry.frames(rows: [], in: size, metrics: phone).isEmpty)
     }
 }
 
@@ -186,9 +187,10 @@ final class AutocorrectTests: XCTestCase {
 /// the tap registered, and backspace is one key away.
 final class DeadTapTests: XCTestCase {
     private let size = CGSize(width: 393, height: 258)
+    private let phone = KeyboardMetrics.forWidth(393, idiom: .phone)
 
     private func frames(_ layer: KeyLayer) -> [[CGRect]] {
-        KeyGeometry.frames(rows: KeyLayout.rows(for: layer), in: size, topInset: 46)
+        KeyGeometry.frames(rows: KeyLayout.rows(for: layer), in: size, metrics: phone)
     }
 
     func testEveryPointOnThePlaneBelongsToAKey() {
@@ -255,6 +257,67 @@ extension AutocorrectTests {
                                "\(word) offered \(suggestion.text)")
                 XCTAssertFalse(suggestion.text.contains(" "),
                                "\(word) offered \(suggestion.text)")
+            }
+        }
+    }
+}
+
+final class KeyboardMetricsTests: XCTestCase {
+    private let phone = KeyboardMetrics.forWidth(393, idiom: .phone)
+    private let phoneWide = KeyboardMetrics.forWidth(852, idiom: .phone)
+    private let pad = KeyboardMetrics.forWidth(820, idiom: .pad)
+    private let padWide = KeyboardMetrics.forWidth(1180, idiom: .pad)
+
+    /// A phone on its side is ~390pt tall. A portrait-sized keyboard there
+    /// leaves nothing of the screen for the thing being typed into.
+    func testLandscapePhoneIsMuchShorter() {
+        XCTAssertLessThan(phoneWide.typingHeight, phone.typingHeight * 0.75)
+        XCTAssertLessThan(phoneWide.topInset, phone.topInset)
+        XCTAssertLessThan(phoneWide.remoteHeight, phone.remoteHeight)
+    }
+
+    /// And a tablet is not a stretched phone: resting hands want real keys.
+    func testPadIsBiggerThanAnyPhone() {
+        XCTAssertGreaterThan(pad.typingHeight, phone.typingHeight)
+        XCTAssertGreaterThan(padWide.typingHeight, pad.typingHeight)
+        XCTAssertGreaterThan(pad.keySpacing, phone.keySpacing)
+    }
+
+    func testWidthAloneDecidesOrientation() {
+        XCTAssertTrue(KeyboardMetrics.isLandscapePhone(852, .phone))
+        XCTAssertFalse(KeyboardMetrics.isLandscapePhone(393, .phone))
+        // A narrow iPad slide-over is still an iPad, not a sideways phone.
+        XCTAssertFalse(KeyboardMetrics.isLandscapePhone(820, .pad))
+    }
+
+    /// The invariants have to hold on every device, not just the one the
+    /// numbers were tuned on.
+    func testNoDeadTapsAndNoOverlapOnAnyDevice() {
+        let cases: [(String, CGSize, KeyboardMetrics)] = [
+            ("phone portrait", CGSize(width: 393, height: phone.typingHeight), phone),
+            ("phone landscape", CGSize(width: 852, height: phoneWide.typingHeight), phoneWide),
+            ("pad portrait", CGSize(width: 820, height: pad.typingHeight), pad),
+            ("pad landscape", CGSize(width: 1180, height: padWide.typingHeight), padWide),
+        ]
+        for (name, size, metrics) in cases {
+            for layer in [KeyLayer.letters, .numbers, .symbols] {
+                let grid = KeyGeometry.frames(rows: KeyLayout.rows(for: layer),
+                                              in: size, metrics: metrics)
+                XCTAssertEqual(grid.count, 4, "\(name)/\(layer)")
+                for row in grid {
+                    for (a, b) in zip(row, row.dropFirst()) {
+                        XCTAssertGreaterThanOrEqual(b.minX, a.maxX - 0.01,
+                                                    "\(name)/\(layer) keys overlap")
+                    }
+                    XCTAssertGreaterThan(row[0].height, 20, "\(name) keys too short")
+                }
+                for x in stride(from: CGFloat(0), through: size.width, by: 7) {
+                    for y in stride(from: CGFloat(0), through: size.height, by: 7) {
+                        XCTAssertNotNil(
+                            KeyGeometry.index(at: CGPoint(x: x, y: y), in: grid),
+                            "\(name)/\(layer) dead at \(x),\(y)")
+                    }
+                }
             }
         }
     }

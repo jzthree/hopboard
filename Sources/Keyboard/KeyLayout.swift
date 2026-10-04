@@ -143,10 +143,13 @@ enum KeyLayout {
 /// keys fill the width, nothing overlaps, nothing escapes the bounds — are
 /// checkable without a device.
 enum KeyGeometry {
-    static func frames(rows: [KeyRow], in size: CGSize, topInset: CGFloat,
-                       sideInset: CGFloat = 3, bottomInset: CGFloat = 5,
-                       rowSpacing: CGFloat = 10,
-                       keySpacing: CGFloat = 6) -> [[CGRect]] {
+    static func frames(rows: [KeyRow], in size: CGSize,
+                       metrics: KeyboardMetrics) -> [[CGRect]] {
+        let topInset = metrics.topInset
+        let sideInset = metrics.sideInset
+        let bottomInset = metrics.bottomInset
+        let rowSpacing = metrics.rowSpacing
+        let keySpacing = metrics.keySpacing
         guard !rows.isEmpty, size.width > 0,
               size.height > topInset + bottomInset else { return [] }
         // The bottom row never sits flush against the edge; the system

@@ -13,6 +13,10 @@ struct KeyboardRootView: View {
     var body: some View {
         Group {
             if model.typingMode {
+                // EDGE TO EDGE. The 8pt gutter the dictation row wants is,
+                // on a keyboard, 8pt of taps that land on nothing — and the
+                // outermost keys are exactly where a thumb overshoots. The
+                // grid keeps its own small inset inside these bounds.
                 TypePad(model: model)
             } else {
                 VStack(spacing: 4) {
@@ -20,9 +24,9 @@ struct KeyboardRootView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     keyRow
                 }
+                .padding(.horizontal, 8)
             }
         }
-        .padding(.horizontal, 8)
         .tint(FlowBrand.accent)
     }
 

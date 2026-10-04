@@ -31,6 +31,15 @@ targets:
           UIColorName: LaunchBackground
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # The app itself stays upright on a phone — it is a card and a
+        # list. iPad has no portrait-only convention, and the KEYBOARD's
+        # orientation follows whatever host app it appears in regardless,
+        # so landscape keys matter on iPhone either way.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSMicrophoneUsageDescription: "HopBoard records only during a Session you start, so the HopBoard keyboard can transcribe your dictation on-device."
         # The whole architecture rests on this: the keyboard cannot touch the
         # mic, so the app keeps an active recording session alive in the
@@ -59,7 +68,7 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         PROVISIONING_PROFILE_SPECIFIER: "HopBoard Dev"
         SWIFT_VERSION: "5.9"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         CURRENT_PROJECT_VERSION: 1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
@@ -96,7 +105,7 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         PROVISIONING_PROFILE_SPECIFIER: "HopBoard Keyboard Dev"
         SWIFT_VERSION: "5.9"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         CURRENT_PROJECT_VERSION: 1
         SKIP_INSTALL: YES
 
@@ -112,6 +121,7 @@ targets:
       - Sources/Keyboard/KeyLayout.swift
       - Sources/Keyboard/TypingEngine.swift
       - Sources/Keyboard/Autocorrect.swift
+      - Sources/Keyboard/KeyboardMetrics.swift
       # Enough of the key plane to RENDER it in a test. Shipping keyboard
       # chrome that has never been looked at is how the Insert pill got a
       # tap target the size of its label.

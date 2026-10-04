@@ -43,7 +43,10 @@ final class KeyboardViewController: UIInputViewController {
         // and one key row — a remote control, not a letter grid. The
         // correction pad temporarily grows it back to ~216.
         if heightConstraint == nil {
-            let constraint = view.heightAnchor.constraint(equalToConstant: 124)
+            let constraint = view.heightAnchor.constraint(
+                equalToConstant: KeyboardMetrics.forWidth(UIScreen.main.bounds.width,
+                                                          idiom: traitCollection.userInterfaceIdiom)
+                    .remoteHeight)
             constraint.priority = .init(999)
             constraint.isActive = true
             heightConstraint = constraint
@@ -89,8 +92,23 @@ final class KeyboardViewController: UIInputViewController {
 
     var keyboardHasFullAccess: Bool { hasFullAccess }
 
-    func setKeyboardHeight(_ height: CGFloat) {
-        heightConstraint?.constant = height
+    /// The height the current device and orientation want. Only the
+    /// controller knows how wide it has been made, and width is the only
+    /// signal an extension gets about which way the phone is held.
+    func applyHeight(typing: Bool) {
+        let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
+        let metrics = KeyboardMetrics.forWidth(width,
+                                               idiom: traitCollection.userInterfaceIdiom)
+        heightConstraint?.constant = metrics.height(typing: typing)
+    }
+
+    /// Rotation changes the answer, and nothing else asks again.
+    override func viewWillTransition(to size: CGSize,
+                                     with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        let metrics = KeyboardMetrics.forWidth(size.width,
+                                               idiom: traitCollection.userInterfaceIdiom)
+        heightConstraint?.constant = metrics.height(typing: model.typingMode)
     }
 }
 
