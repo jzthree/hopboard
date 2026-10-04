@@ -77,6 +77,11 @@ final class KeyboardModel: ObservableObject {
     /// survives the keyboard being hidden, and a phone can stay locked for
     /// an hour with a finished transcript waiting behind it.
     private static let waitBudget: TimeInterval = 45
+    /// Dictation is a remote control and stays short. Typing is a keyboard:
+    /// four rows plus the strip the preview bubbles and candidates share,
+    /// since an extension cannot draw a bubble outside its own bounds.
+    static let remoteHeight: CGFloat = 124
+    static let typingHeight: CGFloat = 258
     /// Whether shared-keychain IPC works from this process. Probed, not
     /// inferred from hasFullAccess — the probe is the ground truth.
     private var ipcAvailable = false
@@ -113,7 +118,7 @@ final class KeyboardModel: ObservableObject {
     func becameVisible(showsGlobe: Bool) {
         isVisible = true
         self.showsGlobe = showsGlobe
-        controller?.setKeyboardHeight(typingMode ? 216 : 124)
+        controller?.setKeyboardHeight(typingMode ? Self.typingHeight : Self.remoteHeight)
         // NO keychain traffic on the launch path: the keyboard service's
         // watchdog kills slow cold starts (worst right after an app update,
         // when everything is uncached) and iOS then skips to the next
@@ -263,8 +268,13 @@ final class KeyboardModel: ObservableObject {
     func setTyping(_ on: Bool) {
         typingMode = on
         showingHistory = false
-        controller?.setKeyboardHeight(on ? 216 : 124)
+        controller?.setKeyboardHeight(on ? Self.typingHeight : Self.remoteHeight)
     }
+
+    /// What precedes the cursor right now, for seeding the pad's shift
+    /// state. Nil whenever the host has not reported yet — the pad then
+    /// starts capitalised, which is right far more often than not.
+    var documentTail: String? { controller?.textBeforeCursor }
 
     func typeText(_ text: String) {
         controller?.insert(text)

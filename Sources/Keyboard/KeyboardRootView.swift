@@ -517,131 +517,36 @@ struct KeyStyle: ButtonStyle {
     }
 }
 
-/// The correction pad: a deliberately minimal QWERTY for typing "yes"
-/// instead of dictating it. No autocorrect, no prediction, no prose
-/// ambitions — the mic key returns to dictation.
-struct TypePad: View {
-    @ObservedObject var model: KeyboardModel
-    @State private var shifted = false
+/// The typing half, as a real keyboard rather than a grid of buttons.
+/// Everything that makes it feel like one — preview bubbles, slide-to-
+/// correct, two-thumb rollover, long-press accents — needs a single view
+/// tracking every touch, so the whole pad is UIKit. See KeyPlaneView.
+struct TypePad: UIViewRepresentable {
+    let model: KeyboardModel
 
-    /// Three layers, like the system keyboard: letters, 123, #+=.
-    private enum Layer { case letters, numbers, symbols }
-    @State private var layer: Layer = .letters
+    func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
-    private static let row1 = ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]
-    private static let row2 = ["a", "s", "d", "f", "g", "h", "j", "k", "l"]
-    private static let row3 = ["z", "x", "c", "v", "b", "n", "m"]
-    private static let num1 = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
-    private static let num2 = ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]
-    private static let sym1 = ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="]
-    private static let sym2 = ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"]
-    private static let punct = [".", ",", "?", "!", "'"]
-
-    var body: some View {
-        VStack(spacing: 8) {
-            switch layer {
-            case .letters: letterRow(Self.row1)
-            case .numbers: letterRow(Self.num1)
-            case .symbols: letterRow(Self.sym1)
-            }
-            switch layer {
-            case .letters: letterRow(Self.row2).padding(.horizontal, 14)
-            case .numbers: letterRow(Self.num2)
-            case .symbols: letterRow(Self.sym2)
-            }
-            HStack(spacing: 6) {
-                if layer == .letters {
-                    controlKey(shifted ? "shift.fill" : "shift") { shifted.toggle() }
-                } else {
-                    // The second-symbols toggle lives where shift was —
-                    // exactly the system keyboard's arrangement.
-                    Button {
-                        layer = layer == .numbers ? .symbols : .numbers
-                    } label: {
-                        Text(layer == .numbers ? "#+=" : "123")
-                            .font(.footnote)
-                            .frame(width: 40, height: 40)
-                            .background(padKeyBackground)
-                    }
-                    .buttonStyle(KeyStyle())
-                }
-                letterRow(layer == .letters ? Self.row3 : Self.punct)
-                    .padding(.horizontal, layer == .letters ? 0 : 24)
-                RepeatKey(systemName: "delete.left") { model.deleteTapped() }
-                    .frame(width: 40, height: 40)
-                    .background(padKeyBackground)
-            }
-            HStack(spacing: 6) {
-                Button {
-                    layer = layer == .letters ? .numbers : .letters
-                    shifted = false
-                } label: {
-                    Text(layer == .letters ? "123" : "abc")
-                        .font(.subheadline)
-                        .frame(width: 46, height: 40)
-                        .background(padKeyBackground)
-                }
-                .buttonStyle(KeyStyle())
-                Button {
-                    model.setTyping(false)
-                } label: {
-                    Image(systemName: "mic.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 46, height: 40)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(FlowBrand.accent))
-                }
-                .buttonStyle(KeyStyle())
-                .accessibilityLabel("Back to dictation")
-                key("space") { model.spaceTapped() }
-                key("return") { model.returnTapped() }
-                    .frame(width: 88)
-            }
-        }
+    func makeUIView(context: Context) -> KeyPlaneView {
+        let plane = KeyPlaneView(frame: .zero)
+        plane.delegate = context.coordinator
+        // Shift starts where the sentence does, which only the host knows.
+        plane.seedContext(model.documentTail)
+        return plane
     }
 
-    private func letterRow(_ letters: [String]) -> some View {
-        HStack(spacing: 5) {
-            ForEach(letters, id: \.self) { letter in
-                Button {
-                    model.typeText(shifted ? letter.uppercased() : letter)
-                    if shifted { shifted = false }
-                } label: {
-                    Text(shifted ? letter.uppercased() : letter)
-                        .font(.system(size: 21))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 40)
-                        .background(padKeyBackground)
-                }
-                .buttonStyle(KeyStyle())
-            }
-        }
-    }
+    func updateUIView(_ uiView: KeyPlaneView, context: Context) {}
 
-    private func controlKey(_ systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.subheadline.weight(.medium))
-                .frame(width: 40, height: 40)
-                .background(padKeyBackground)
-        }
-        .buttonStyle(KeyStyle())
-    }
+    @MainActor
+    final class Coordinator: KeyPlaneDelegate {
+        private let model: KeyboardModel
+        init(model: KeyboardModel) { self.model = model }
 
-    private func key(_ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.subheadline)
-                .frame(maxWidth: .infinity)
-                .frame(height: 40)
-                .background(padKeyBackground)
+        func keyPlane(_ plane: KeyPlaneView, didInsert text: String) {
+            model.typeText(text)
         }
-        .buttonStyle(KeyStyle())
-    }
-
-    private var padKeyBackground: some View {
-        RoundedRectangle(cornerRadius: 7)
-            .fill(Color(.secondarySystemFill))
+        func keyPlaneDidBackspace(_ plane: KeyPlaneView) { model.deleteTapped() }
+        func keyPlaneDidTapReturn(_ plane: KeyPlaneView) { model.returnTapped() }
+        func keyPlaneDidTapDictation(_ plane: KeyPlaneView) { model.setTyping(false) }
     }
 }
 

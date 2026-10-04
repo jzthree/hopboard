@@ -103,7 +103,14 @@ targets:
   HopBoardTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [Tests]
+    sources:
+      - Tests
+      # The pure layout and typing rules live in the KEYBOARD target, which
+      # the app-hosted test bundle cannot see. Compiling those two files in
+      # directly keeps them testable without exiling keyboard concerns into
+      # Shared, where the app would carry them for nothing.
+      - Sources/Keyboard/KeyLayout.swift
+      - Sources/Keyboard/TypingEngine.swift
     dependencies:
       - target: HopBoard
     settings:
