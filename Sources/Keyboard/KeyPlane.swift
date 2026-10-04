@@ -6,6 +6,9 @@ protocol KeyPlaneDelegate: AnyObject {
     func keyPlaneDidBackspace(_ plane: KeyPlaneView)
     func keyPlaneDidTapReturn(_ plane: KeyPlaneView)
     func keyPlaneDidTapDictation(_ plane: KeyPlaneView)
+    /// Swap the word just typed for its correction: delete that many
+    /// characters, then insert.
+    func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String)
 }
 
 /// One view owning every touch on the key grid.
@@ -53,10 +56,18 @@ final class KeyPlaneView: UIView {
     private var touching: [ObjectIdentifier: Touching] = [:]
     private var repeatTimer: Timer?
 
+    private let autocorrect = Autocorrect()
+    private let candidates = CandidateBarView()
+    /// UITextChecker's guesses() is the expensive call on this path; don't
+    /// re-ask it for a word that has not changed.
+    private var lastCandidateWord: String?
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         isMultipleTouchEnabled = true
         clipsToBounds = true
+        addSubview(candidates)
+        candidates.onPick = { [weak self] suggestion in self?.pick(suggestion) }
         rebuildKeys()
     }
 
@@ -67,12 +78,45 @@ final class KeyPlaneView: UIView {
     func seedContext(_ text: String?) {
         tail = String((text ?? "").suffix(TypingEngine.tailLimit))
         applyAutoShift()
+        refreshCandidates()
+    }
+
+    private func refreshCandidates() {
+        let word = TypingEngine.currentWord(in: tail)
+        guard word != lastCandidateWord else { return }
+        lastCandidateWord = word
+        candidates.show(autocorrect.suggestions(for: word))
+    }
+
+    /// A tapped slot. The literal is a refusal, and a refusal is a lesson:
+    /// the word joins the kept list and stops being questioned.
+    private func pick(_ suggestion: Autocorrect.Suggestion) {
+        let word = TypingEngine.currentWord(in: tail)
+        guard !word.isEmpty else { return }
+        KeyFeedback.tap()
+        if suggestion.isLiteral {
+            autocorrect.keep(word)
+        } else {
+            delegate?.keyPlane(self, replaceLast: word.count, with: suggestion.text)
+            tail = TypingEngine.replacingCurrentWord(in: tail, with: suggestion.text)
+        }
+        lastCandidateWord = nil
+        refreshCandidates()
+    }
+
+    /// Apply the pending correction, if any, at the moment the word ends.
+    private func applyPendingCorrection() {
+        let word = TypingEngine.currentWord(in: tail)
+        guard let fix = autocorrect.correction(for: word) else { return }
+        delegate?.keyPlane(self, replaceLast: word.count, with: fix)
+        tail = TypingEngine.replacingCurrentWord(in: tail, with: fix)
     }
 
     // MARK: layout
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        candidates.frame = CGRect(x: 0, y: 0, width: bounds.width, height: topInset - 8)
         frames = KeyGeometry.frames(rows: rows, in: bounds.size, topInset: topInset)
         for (rowIndex, row) in keyViews.enumerated() {
             for (colIndex, view) in row.enumerated() {
@@ -201,6 +245,9 @@ final class KeyPlaneView: UIView {
     private func commitKey(_ cap: KeyCap) {
         switch cap.action {
         case .text(let character):
+            // Punctuation ends a word, and the end of a word is the only
+            // moment a correction can still be applied.
+            if TypingEngine.endsWord(character) { applyPendingCorrection() }
             insert(isShifted ? character.uppercased() : character)
         case .shift:
             toggleShift()
@@ -210,6 +257,7 @@ final class KeyPlaneView: UIView {
         case .layer(let layer):
             switchTo(layer)
         case .space:
+            applyPendingCorrection()
             if TypingEngine.doubleSpacePeriod(after: tail) {
                 delegate?.keyPlaneDidBackspace(self)
                 tail = TypingEngine.deletingLast(from: tail)
@@ -218,6 +266,7 @@ final class KeyPlaneView: UIView {
                 insert(" ")
             }
         case .newline:
+            applyPendingCorrection()
             delegate?.keyPlaneDidTapReturn(self)
             tail = TypingEngine.appending("\n", to: tail)
             applyAutoShift()
@@ -229,9 +278,8 @@ final class KeyPlaneView: UIView {
     private func insert(_ text: String) {
         delegate?.keyPlane(self, didInsert: text)
         tail = TypingEngine.appending(text, to: tail)
-        // A layer switched to for one symbol returns to letters, the way
-        // the system does after you type a number's worth of punctuation.
         applyAutoShift()
+        refreshCandidates()
     }
 
     private func applyAutoShift() {
@@ -263,6 +311,7 @@ final class KeyPlaneView: UIView {
         delegate?.keyPlaneDidBackspace(self)
         tail = TypingEngine.deletingLast(from: tail)
         applyAutoShift()
+        refreshCandidates()
         repeatTimer?.invalidate()
         // Hold-to-repeat, then faster — the system's two-stage feel.
         repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
@@ -275,6 +324,7 @@ final class KeyPlaneView: UIView {
                     self.delegate?.keyPlaneDidBackspace(self)
                     self.tail = TypingEngine.deletingLast(from: self.tail)
                     self.applyAutoShift()
+                    self.refreshCandidates()
                 }
             }
         }

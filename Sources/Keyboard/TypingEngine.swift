@@ -46,4 +46,23 @@ enum TypingEngine {
     static func deletingLast(from tail: String) -> String {
         String(tail.dropLast())
     }
+
+    /// The word being typed right now: the trailing run of letters, with
+    /// apostrophes, so "don't" is one word and not two thirds of one.
+    static func currentWord(in tail: String) -> String {
+        String(tail.reversed()
+            .prefix { $0.isLetter || $0 == "'" || $0 == "\u{2019}" }
+            .reversed())
+    }
+
+    static func replacingCurrentWord(in tail: String, with word: String) -> String {
+        String(tail.dropLast(currentWord(in: tail).count)) + word
+    }
+
+    /// Whether typing this ends the word — the moment a correction is
+    /// either applied or lost.
+    static func endsWord(_ text: String) -> Bool {
+        guard let first = text.first else { return false }
+        return !(first.isLetter || first == "'" || first == "\u{2019}")
+    }
 }

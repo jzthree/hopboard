@@ -111,6 +111,13 @@ targets:
       # Shared, where the app would carry them for nothing.
       - Sources/Keyboard/KeyLayout.swift
       - Sources/Keyboard/TypingEngine.swift
+      - Sources/Keyboard/Autocorrect.swift
+      # Enough of the key plane to RENDER it in a test. Shipping keyboard
+      # chrome that has never been looked at is how the Insert pill got a
+      # tap target the size of its label.
+      - Sources/Keyboard/KeyFeedback.swift
+      - Sources/Keyboard/KeyViews.swift
+      - Sources/Keyboard/KeyPlane.swift
     dependencies:
       - target: HopBoard
     settings:

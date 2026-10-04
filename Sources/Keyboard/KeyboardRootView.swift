@@ -547,6 +547,9 @@ struct TypePad: UIViewRepresentable {
         func keyPlaneDidBackspace(_ plane: KeyPlaneView) { model.deleteTapped() }
         func keyPlaneDidTapReturn(_ plane: KeyPlaneView) { model.returnTapped() }
         func keyPlaneDidTapDictation(_ plane: KeyPlaneView) { model.setTyping(false) }
+        func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String) {
+            model.replaceLast(count, with: text)
+        }
     }
 }
 

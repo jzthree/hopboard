@@ -175,3 +175,73 @@ final class AlternatesView: UIView {
         }
     }
 }
+
+/// The three slots above the keys: what you typed, what it will become,
+/// and one more way out. Tapping the literal is how you refuse a
+/// correction — and refusing teaches, so it stops being offered.
+final class CandidateBarView: UIView {
+    var onPick: ((Autocorrect.Suggestion) -> Void)?
+    private var suggestions: [Autocorrect.Suggestion] = []
+    private var labels: [UILabel] = []
+    private var separators: [UIView] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+
+    func show(_ new: [Autocorrect.Suggestion]) {
+        guard new != suggestions else { return }
+        suggestions = new
+        labels.forEach { $0.removeFromSuperview() }
+        separators.forEach { $0.removeFromSuperview() }
+        labels = new.map { suggestion in
+            let label = UILabel()
+            // The literal wears quotes, the way the system marks the word
+            // it will NOT keep unless you say so.
+            label.text = suggestion.isLiteral ? "\u{201C}\(suggestion.text)\u{201D}" : suggestion.text
+            label.textAlignment = .center
+            label.font = .systemFont(ofSize: 17,
+                                     weight: suggestion.isDefault ? .semibold : .regular)
+            label.textColor = .label
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.7
+            addSubview(label)
+            return label
+        }
+        separators = (1..<max(new.count, 1)).map { _ in
+            let line = UIView()
+            line.backgroundColor = UIColor.label.withAlphaComponent(0.18)
+            addSubview(line)
+            return line
+        }
+        isHidden = new.isEmpty
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard !labels.isEmpty else { return }
+        let slot = bounds.width / CGFloat(labels.count)
+        for (index, label) in labels.enumerated() {
+            label.frame = CGRect(x: CGFloat(index) * slot, y: 0,
+                                 width: slot, height: bounds.height)
+                .insetBy(dx: 6, dy: 0)
+        }
+        for (index, line) in separators.enumerated() {
+            line.frame = CGRect(x: CGFloat(index + 1) * slot - 0.5,
+                                y: bounds.height * 0.22, width: 1,
+                                height: bounds.height * 0.56)
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first, !labels.isEmpty else { return }
+        let slot = bounds.width / CGFloat(labels.count)
+        let index = Int(touch.location(in: self).x / slot)
+        guard suggestions.indices.contains(index) else { return }
+        onPick?(suggestions[index])
+    }
+}

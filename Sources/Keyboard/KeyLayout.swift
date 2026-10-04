@@ -144,10 +144,14 @@ enum KeyLayout {
 /// checkable without a device.
 enum KeyGeometry {
     static func frames(rows: [KeyRow], in size: CGSize, topInset: CGFloat,
-                       sideInset: CGFloat = 3, rowSpacing: CGFloat = 10,
+                       sideInset: CGFloat = 3, bottomInset: CGFloat = 5,
+                       rowSpacing: CGFloat = 10,
                        keySpacing: CGFloat = 6) -> [[CGRect]] {
-        guard !rows.isEmpty, size.width > 0, size.height > topInset else { return [] }
-        let usableHeight = size.height - topInset
+        guard !rows.isEmpty, size.width > 0,
+              size.height > topInset + bottomInset else { return [] }
+        // The bottom row never sits flush against the edge; the system
+        // leaves a margin there and a keyboard without one reads as cropped.
+        let usableHeight = size.height - topInset - bottomInset
         let rowHeight = (usableHeight - rowSpacing * CGFloat(rows.count - 1))
             / CGFloat(rows.count)
         guard rowHeight > 0 else { return [] }

@@ -91,12 +91,90 @@ final class KeyGeometryTests: XCTestCase {
         let frames = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
                                         in: size, topInset: 46)
         XCTAssertGreaterThanOrEqual(frames[0][0].minY, 46)
-        XCTAssertLessThanOrEqual(frames.last!.last!.maxY, size.height + 0.01)
+        // Clear of the bottom edge, not flush with it.
+        XCTAssertLessThan(frames.last!.last!.maxY, size.height)
     }
 
     func testDegenerateSizesProduceNothingRatherThanNaNs() {
         XCTAssertTrue(KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
                                          in: .zero, topInset: 46).isEmpty)
         XCTAssertTrue(KeyGeometry.frames(rows: [], in: size, topInset: 46).isEmpty)
+    }
+}
+
+final class WordBoundaryTests: XCTestCase {
+    func testCurrentWordIsTheTrailingRun() {
+        XCTAssertEqual(TypingEngine.currentWord(in: "the quick brow"), "brow")
+        XCTAssertEqual(TypingEngine.currentWord(in: "don't"), "don't")
+        XCTAssertEqual(TypingEngine.currentWord(in: "done. "), "")
+        XCTAssertEqual(TypingEngine.currentWord(in: ""), "")
+    }
+
+    func testReplacingTouchesOnlyTheLastWord() {
+        XCTAssertEqual(TypingEngine.replacingCurrentWord(in: "the teh", with: "the"),
+                       "the the")
+        XCTAssertEqual(TypingEngine.replacingCurrentWord(in: "hi ", with: "x"), "hi x")
+    }
+
+    func testWhatEndsAWord() {
+        XCTAssertTrue(TypingEngine.endsWord(" "))
+        XCTAssertTrue(TypingEngine.endsWord("."))
+        XCTAssertTrue(TypingEngine.endsWord("1"))
+        XCTAssertFalse(TypingEngine.endsWord("a"))
+        XCTAssertFalse(TypingEngine.endsWord("'"))
+        XCTAssertFalse(TypingEngine.endsWord(""))
+    }
+}
+
+final class AutocorrectTests: XCTestCase {
+    private var subject: Autocorrect!
+    private let key = "kb.tests.keptWords"
+
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: key)
+        subject = Autocorrect(language: "en_US", keptKey: key)
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: key)
+        super.tearDown()
+    }
+
+    func testFixesAnOrdinaryTypo() {
+        XCTAssertEqual(subject.correction(for: "teh"), "the")
+    }
+
+    func testLeavesCorrectWordsAlone() {
+        XCTAssertNil(subject.correction(for: "the"))
+        XCTAssertNil(subject.correction(for: "keyboard"))
+    }
+
+    /// The expensive mistakes are not typos. A keyboard that "fixes" a
+    /// password, a path or an identifier has destroyed something the user
+    /// cannot retype from memory.
+    func testRefusesAnythingThatIsNotAnOrdinaryWord() {
+        XCTAssertFalse(subject.isCorrectable("hunter2"))
+        XCTAssertFalse(subject.isCorrectable("usr/lib"))
+        XCTAssertFalse(subject.isCorrectable("HopBoard"))
+        XCTAssertFalse(subject.isCorrectable("xQ"))      // too short to judge
+        XCTAssertTrue(subject.isCorrectable("teh"))
+    }
+
+    func testRefusingACorrectionTeachesIt() {
+        XCTAssertNotNil(subject.correction(for: "teh"))
+        subject.keep("teh")
+        XCTAssertNil(subject.correction(for: "teh"), "a kept word is never corrected again")
+        XCTAssertTrue(subject.suggestions(for: "teh").isEmpty)
+        // And it survives the keyboard being torn down and rebuilt.
+        XCTAssertTrue(Autocorrect(language: "en_US", keptKey: key).isKept("TEH"))
+    }
+
+    func testSuggestionsLeadWithTheLiteralAndMarkOneDefault() {
+        let suggestions = subject.suggestions(for: "teh")
+        XCTAssertEqual(suggestions.first?.text, "teh")
+        XCTAssertEqual(suggestions.first?.isLiteral, true)
+        XCTAssertEqual(suggestions.filter(\.isDefault).count, 1)
+        XCTAssertEqual(suggestions.first(where: \.isDefault)?.text, "the")
     }
 }

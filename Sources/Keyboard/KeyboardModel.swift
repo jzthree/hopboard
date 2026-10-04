@@ -276,6 +276,13 @@ final class KeyboardModel: ObservableObject {
     /// starts capitalised, which is right far more often than not.
     var documentTail: String? { controller?.textBeforeCursor }
 
+    /// Swap the last `count` characters for `text` — how an autocorrect
+    /// lands, since a keyboard can only type and delete.
+    func replaceLast(_ count: Int, with text: String) {
+        for _ in 0..<count { controller?.deleteBackwardOnce() }
+        controller?.insert(text)
+    }
+
     func typeText(_ text: String) {
         controller?.insert(text)
     }
