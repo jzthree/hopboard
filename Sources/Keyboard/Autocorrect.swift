@@ -74,10 +74,22 @@ final class Autocorrect {
         return found.location != NSNotFound
     }
 
+    /// A replacement has to be a single ordinary word. UITextChecker
+    /// cheerfully offers "hop-board" and "hop board" for any compound it
+    /// does not know, and applying one of those SPLITS a word that was
+    /// typed on purpose — which is where the dashes out of nowhere came
+    /// from. Nothing legitimate is lost: a typo's fix is a word.
+    private func isPlainWord(_ text: String) -> Bool {
+        !text.isEmpty && text.allSatisfy {
+            $0.isLetter || $0 == "'" || $0 == "\u{2019}"
+        }
+    }
+
     private func guesses(for word: String) -> [String] {
         let text = word as NSString
-        let all = checker.guesses(forWordRange: NSRange(location: 0, length: text.length),
-                                  in: word, language: language) ?? []
+        let all = (checker.guesses(forWordRange: NSRange(location: 0, length: text.length),
+                                   in: word, language: language) ?? [])
+            .filter(isPlainWord)
         // Case follows what was typed: correcting "teh" inside a sentence
         // should not hand back "Teh".
         let capitalised = word.first?.isUppercase ?? false

@@ -29,9 +29,14 @@ final class KeyboardModel: ObservableObject {
     /// away, wait timed out, or it came from the app). Lingers as an
     /// "Insert" pill until tapped or superseded — never silently eaten.
     @Published private(set) var pendingResult: FlowResult?
-    /// The correction pad: a minimal QWERTY for typing "yes" instead of
-    /// dictating it. Temporary by design — no autocorrect, no prose.
-    @Published private(set) var typingMode = false
+    /// Whether the keyboard is showing keys rather than the mic. PERSISTED
+    /// (extension defaults), because the keyboard is torn down and rebuilt
+    /// constantly — focus changes, app hops, the screen locking — and a
+    /// keyboard that dumps you back on the dictation row every time it
+    /// reappears cannot be anyone's default. It stopped being a temporary
+    /// correction pad when it grew autocorrect.
+    @Published private(set) var typingMode = UserDefaults.standard.bool(forKey: KeyboardModel.typingModeKey)
+    private static let typingModeKey = "kb.typingMode"
     /// When the current recording started — drives the live timer that
     /// makes the recording state unmissable.
     @Published private(set) var recordingStartedAt: Date?
@@ -143,7 +148,6 @@ final class KeyboardModel: ObservableObject {
         pollTimer?.invalidate()
         pollTimer = nil
         showingHistory = false
-        typingMode = false   // the pad is temporary by design
         // A recording in progress is ENDED, not thrown away. The keyboard
         // goes away for reasons that have nothing to do with wanting the
         // dictation gone — above all the screen locking mid-sentence, which
@@ -267,6 +271,7 @@ final class KeyboardModel: ObservableObject {
 
     func setTyping(_ on: Bool) {
         typingMode = on
+        UserDefaults.standard.set(on, forKey: Self.typingModeKey)
         showingHistory = false
         controller?.setKeyboardHeight(on ? Self.typingHeight : Self.remoteHeight)
     }

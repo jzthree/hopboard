@@ -236,3 +236,26 @@ final class DeadTapTests: XCTestCase {
         }
     }
 }
+
+extension AutocorrectTests {
+    /// Dashes out of nowhere: UITextChecker offers hyphenated and split
+    /// forms for compounds it does not know, and applying one breaks a
+    /// word that was typed deliberately. A correction is a WORD.
+    func testCorrectionsAreAlwaysOneOrdinaryWord() {
+        let checker = Autocorrect(language: "en_US", keptKey: "kb.tests.plainWords")
+        defer { UserDefaults.standard.removeObject(forKey: "kb.tests.plainWords") }
+        for word in ["hopboard", "teh", "recieve", "definately", "wierd",
+                     "seperate", "keyboardd", "thats", "alot", "everytime"] {
+            if let fix = checker.correction(for: word) {
+                XCTAssertFalse(fix.contains("-"), "\(word) -> \(fix) inserted a dash")
+                XCTAssertFalse(fix.contains(" "), "\(word) -> \(fix) split the word")
+            }
+            for suggestion in checker.suggestions(for: word) {
+                XCTAssertFalse(suggestion.text.contains("-"),
+                               "\(word) offered \(suggestion.text)")
+                XCTAssertFalse(suggestion.text.contains(" "),
+                               "\(word) offered \(suggestion.text)")
+            }
+        }
+    }
+}
