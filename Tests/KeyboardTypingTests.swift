@@ -178,3 +178,61 @@ final class AutocorrectTests: XCTestCase {
         XCTAssertEqual(suggestions.first(where: \.isDefault)?.text, "the")
     }
 }
+
+/// "I should never be able to tap and nothing lands." (Jian, 2026-10-04)
+/// A dead tap is the worst outcome a keyboard has: it teaches you nothing
+/// about where you missed, so you cannot aim better, and it leaves you
+/// unsure the keyboard is even alive. A wrong character is visible, says
+/// the tap registered, and backspace is one key away.
+final class DeadTapTests: XCTestCase {
+    private let size = CGSize(width: 393, height: 258)
+
+    private func frames(_ layer: KeyLayer) -> [[CGRect]] {
+        KeyGeometry.frames(rows: KeyLayout.rows(for: layer), in: size, topInset: 46)
+    }
+
+    func testEveryPointOnThePlaneBelongsToAKey() {
+        for layer in [KeyLayer.letters, .numbers, .symbols] {
+            let grid = frames(layer)
+            var dead: [CGPoint] = []
+            for x in stride(from: CGFloat(0), through: size.width, by: 3) {
+                for y in stride(from: CGFloat(0), through: size.height, by: 3) {
+                    let point = CGPoint(x: x, y: y)
+                    if KeyGeometry.index(at: point, in: grid) == nil { dead.append(point) }
+                }
+            }
+            XCTAssertTrue(dead.isEmpty,
+                          "\(layer) has \(dead.count) dead points, first \(dead.first!)")
+        }
+    }
+
+    /// The places that WERE dead: the gap between two keys, both side
+    /// insets, and the bottom margin.
+    func testThePreviouslyDeadPlacesResolve() {
+        let grid = frames(.letters)
+        let first = grid[0][0]
+        let second = grid[0][1]
+        let gap = CGPoint(x: (first.maxX + second.minX) / 2, y: first.midY)
+        XCTAssertNotNil(KeyGeometry.index(at: gap, in: grid))
+        XCTAssertNotNil(KeyGeometry.index(at: CGPoint(x: 0, y: first.midY), in: grid))
+        XCTAssertNotNil(KeyGeometry.index(at: CGPoint(x: size.width, y: first.midY), in: grid))
+        XCTAssertNotNil(KeyGeometry.index(at: CGPoint(x: size.width / 2,
+                                                      y: size.height), in: grid))
+        // Including the strip above the keys, when no candidates occupy it.
+        XCTAssertNotNil(KeyGeometry.index(at: CGPoint(x: 20, y: 2), in: grid))
+    }
+
+    /// Generosity must not cost accuracy: a point inside a key is still
+    /// that key, never a nearer-centre neighbour.
+    func testAPointInsideAKeyIsThatKey() {
+        let grid = frames(.letters)
+        for (rowIndex, row) in grid.enumerated() {
+            for (colIndex, frame) in row.enumerated() {
+                let found = KeyGeometry.index(at: CGPoint(x: frame.midX, y: frame.midY),
+                                              in: grid)
+                XCTAssertEqual(found?.row, rowIndex)
+                XCTAssertEqual(found?.col, colIndex)
+            }
+        }
+    }
+}

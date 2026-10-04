@@ -165,16 +165,7 @@ final class KeyPlaneView: UIView {
     // MARK: touches
 
     private func keyIndex(at point: CGPoint) -> (row: Int, col: Int)? {
-        for (rowIndex, rowFrames) in frames.enumerated() {
-            for (colIndex, frame) in rowFrames.enumerated() {
-                // Generous vertically: the gap between rows belongs to the
-                // nearer row rather than to nothing.
-                if frame.insetBy(dx: 0, dy: -5).contains(point) {
-                    return (rowIndex, colIndex)
-                }
-            }
-        }
-        return nil
+        KeyGeometry.index(at: point, in: frames)
     }
 
     private func cap(_ state: Touching) -> KeyCap { rows[state.row].keys[state.col] }

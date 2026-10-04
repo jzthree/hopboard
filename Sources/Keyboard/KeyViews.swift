@@ -240,8 +240,10 @@ final class CandidateBarView: UIView {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first, !labels.isEmpty else { return }
         let slot = bounds.width / CGFloat(labels.count)
-        let index = Int(touch.location(in: self).x / slot)
-        guard suggestions.indices.contains(index) else { return }
+        // Clamped, not validated away: a tap on this bar that resolves to
+        // nothing is the same dead tap the key grid refuses to have.
+        let raw = Int(touch.location(in: self).x / slot)
+        let index = min(max(raw, 0), suggestions.count - 1)
         onPick?(suggestions[index])
     }
 }

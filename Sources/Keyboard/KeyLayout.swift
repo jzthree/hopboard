@@ -171,4 +171,32 @@ enum KeyGeometry {
             }
         }
     }
+
+    /// The key a touch means — the NEAREST one, never "none".
+    ///
+    /// Asking which rect contains the point leaves the gaps between keys,
+    /// the side insets and the bottom margin dead, and a tap that produces
+    /// nothing is the worst thing a keyboard can do: it tells you nothing
+    /// about what went wrong, so you cannot aim better next time, and you
+    /// are left unsure whether the keyboard is even alive. A wrong
+    /// character is strictly more informative — it is visible, it says the
+    /// tap registered, and backspace is right there. So every point on the
+    /// plane belongs to some key.
+    static func index(at point: CGPoint, in frames: [[CGRect]]) -> (row: Int, col: Int)? {
+        var best: (row: Int, col: Int)?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for (rowIndex, rowFrames) in frames.enumerated() {
+            for (colIndex, frame) in rowFrames.enumerated() {
+                let dx = max(frame.minX - point.x, 0, point.x - frame.maxX)
+                let dy = max(frame.minY - point.y, 0, point.y - frame.maxY)
+                let distance = dx * dx + dy * dy
+                if distance == 0 { return (rowIndex, colIndex) }
+                if distance < bestDistance {
+                    bestDistance = distance
+                    best = (rowIndex, colIndex)
+                }
+            }
+        }
+        return best
+    }
 }
