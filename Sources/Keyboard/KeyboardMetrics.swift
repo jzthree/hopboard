@@ -21,6 +21,12 @@ struct KeyboardMetrics: Equatable {
     var keySpacing: CGFloat
     var sideInset: CGFloat
     var bottomInset: CGFloat
+    /// How far ABOVE the reported touch the user actually meant. A
+    /// fingertip's contact patch centres below the point someone believes
+    /// they are pressing, so an uncompensated keyboard drifts a row low and
+    /// every near-miss goes downward. Kept well under half a row gap, so it
+    /// only decides the cases that were already borderline.
+    var touchRise: CGFloat
 
     /// Classification from the SHAPE of the screen, never from a device
     /// name. Width alone was wrong the moment a folding phone existed: a
@@ -43,7 +49,7 @@ struct KeyboardMetrics: Equatable {
             // otherwise, and what you are typing into disappears.
             metrics = KeyboardMetrics(typingHeight: 172, remoteHeight: 96,
                                       topInset: 34, rowSpacing: 6, keySpacing: 5,
-                                      sideInset: 3, bottomInset: 3)
+                                      sideInset: 3, bottomInset: 3, touchRise: 3)
         } else if isTabletShaped(width: width, height: height, idiom: idiom) {
             // Full-size keys; the hand is resting, not reaching.
             let wide = width > 900
@@ -51,11 +57,11 @@ struct KeyboardMetrics: Equatable {
                                       remoteHeight: wide ? 168 : 150,
                                       topInset: wide ? 62 : 56,
                                       rowSpacing: 14, keySpacing: 10,
-                                      sideInset: 6, bottomInset: 8)
+                                      sideInset: 6, bottomInset: 8, touchRise: 5)
         } else {
             metrics = KeyboardMetrics(typingHeight: 258, remoteHeight: 124,
                                       topInset: 46, rowSpacing: 10, keySpacing: 6,
-                                      sideInset: 3, bottomInset: 5)
+                                      sideInset: 3, bottomInset: 5, touchRise: 4)
         }
         // Whatever the shape, the keyboard never eats half the screen. This
         // is the backstop for a form factor nobody here has held: get the

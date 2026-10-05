@@ -59,6 +59,33 @@ enum TypingEngine {
         String(tail.dropLast(currentWord(in: tail).count)) + word
     }
 
+    /// Case-insensitive Damerau-Levenshtein: insert, delete, substitute,
+    /// and TRANSPOSE, all costing one.
+    ///
+    /// Plain Levenshtein charges two for a transposition, which rules out
+    /// the single most common typo there is — "teh" sits two edits from
+    /// "the" and would be refused as a wild guess. Adjacent swaps are what
+    /// fingers actually do, so they have to count as one slip.
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let x = Array(a.lowercased()), y = Array(b.lowercased())
+        if x.isEmpty { return y.count }
+        if y.isEmpty { return x.count }
+        var d = [[Int]](repeating: [Int](repeating: 0, count: y.count + 1),
+                        count: x.count + 1)
+        for i in 0...x.count { d[i][0] = i }
+        for j in 0...y.count { d[0][j] = j }
+        for i in 1...x.count {
+            for j in 1...y.count {
+                let cost = x[i - 1] == y[j - 1] ? 0 : 1
+                d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                if i > 1, j > 1, x[i - 1] == y[j - 2], x[i - 2] == y[j - 1] {
+                    d[i][j] = min(d[i][j], d[i - 2][j - 2] + cost)
+                }
+            }
+        }
+        return d[x.count][y.count]
+    }
+
     /// Whether typing this ends the word — the moment a correction is
     /// either applied or lost.
     static func endsWord(_ text: String) -> Bool {

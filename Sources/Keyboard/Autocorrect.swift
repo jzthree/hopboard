@@ -96,13 +96,24 @@ final class Autocorrect {
         return all.map { capitalised ? $0.capitalized : $0 }
     }
 
+    /// How far a replacement may stray from what was typed. UITextChecker
+    /// has no confidence score — it answers every question as if it knew,
+    /// and for a name, a product or a piece of jargon it does not know, the
+    /// nearest dictionary word can be three or four edits away. That
+    /// distance IS the confidence signal: one edit is a slipped finger, two
+    /// in a long word is a transposition, further than that is the
+    /// dictionary guessing at a word it has never seen. Longer words earn
+    /// slightly more room because they have more places to go wrong.
+    static func editBudget(for word: String) -> Int { word.count >= 7 ? 2 : 1 }
+
     /// What a word break should apply, or nil to leave the word alone.
     func correction(for word: String) -> String? {
         guard isCorrectable(word), isMisspelled(word) else { return nil }
         guard let best = guesses(for: word).first else { return nil }
-        // A "correction" that only adds or drops an accent is usually
-        // right; one that rewrites the word wholesale usually is not.
-        return best.lowercased() == word.lowercased() ? nil : best
+        guard best.lowercased() != word.lowercased() else { return nil }
+        guard TypingEngine.editDistance(word, best) <= Self.editBudget(for: word)
+        else { return nil }
+        return best
     }
 
     /// The bar's three slots: what you typed, what it will become, and one
@@ -113,9 +124,14 @@ final class Autocorrect {
         guard misspelled else { return [] }
         let options = guesses(for: word).filter { $0.lowercased() != word.lowercased() }
         guard !options.isEmpty else { return [] }
+        // Only the replacement that a word break will ACTUALLY apply is
+        // marked default. Everything else is offered but never imposed, so
+        // the bar stays helpful while auto-apply stays timid.
+        let auto = correction(for: word)
         var result = [Suggestion(text: word, isLiteral: true, isDefault: false)]
-        for (index, option) in options.prefix(2).enumerated() {
-            result.append(Suggestion(text: option, isLiteral: false, isDefault: index == 0))
+        for option in options.prefix(2) {
+            result.append(Suggestion(text: option, isLiteral: false,
+                                     isDefault: option == auto))
         }
         return result
     }

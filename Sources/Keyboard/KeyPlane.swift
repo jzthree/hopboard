@@ -67,6 +67,13 @@ final class KeyPlaneView: UIView {
     private var repeatTimer: Timer?
 
     private let autocorrect = Autocorrect()
+    /// The correction that just happened, and the separator typed after it.
+    /// Backspace while this is live UNDOES the correction instead of
+    /// deleting a character — the universal way out, and the one that
+    /// needs no aiming at a three-slot bar. Any other key closes the
+    /// window, exactly as the system keyboard's does.
+    private var revert: (original: String, applied: String, trailing: String)?
+    private var revertArming = false
     private let candidates = CandidateBarView()
     /// UITextChecker's guesses() is the expensive call on this path; don't
     /// re-ask it for a word that has not changed.
@@ -120,6 +127,25 @@ final class KeyPlaneView: UIView {
         guard let fix = autocorrect.correction(for: word) else { return }
         delegate?.keyPlane(self, replaceLast: word.count, with: fix)
         tail = TypingEngine.replacingCurrentWord(in: tail, with: fix)
+        revert = (original: word, applied: fix, trailing: "")
+        revertArming = true
+    }
+
+    /// Undo the correction and LEARN from it. Reaching for backspace is
+    /// already the user saying "that was wrong"; making them say it twice,
+    /// once per occurrence, is how a keyboard becomes an argument.
+    private func revertLastCorrection() -> Bool {
+        guard let revert else { return false }
+        let removed = revert.applied.count + revert.trailing.count
+        let restored = revert.original + revert.trailing
+        delegate?.keyPlane(self, replaceLast: removed, with: restored)
+        tail = String(tail.dropLast(removed)) + restored
+        autocorrect.keep(revert.original)
+        self.revert = nil
+        lastCandidateWord = nil
+        applyAutoShift()
+        refreshCandidates()
+        return true
     }
 
     // MARK: layout
@@ -176,7 +202,8 @@ final class KeyPlaneView: UIView {
     // MARK: touches
 
     private func keyIndex(at point: CGPoint) -> (row: Int, col: Int)? {
-        KeyGeometry.index(at: point, in: frames)
+        KeyGeometry.index(at: CGPoint(x: point.x, y: point.y - metrics.touchRise),
+                          in: frames)
     }
 
     private func cap(_ state: Touching) -> KeyCap { rows[state.row].keys[state.col] }
@@ -280,6 +307,14 @@ final class KeyPlaneView: UIView {
     private func insert(_ text: String) {
         delegate?.keyPlane(self, didInsert: text)
         tail = TypingEngine.appending(text, to: tail)
+        if revertArming {
+            // The separator that triggered the correction — undoing has to
+            // take it back too, or the cursor lands mid-word.
+            revert?.trailing = text
+            revertArming = false
+        } else {
+            revert = nil
+        }
         applyAutoShift()
         refreshCandidates()
     }
@@ -310,6 +345,13 @@ final class KeyPlaneView: UIView {
     // MARK: backspace repeat
 
     private func startBackspaceRepeat() {
+        // The first backspace after a correction undoes it rather than
+        // deleting, and does not start repeating — holding delete from
+        // there would eat the word you just got back.
+        if revertLastCorrection() {
+            KeyFeedback.tap()
+            return
+        }
         delegate?.keyPlaneDidBackspace(self)
         tail = TypingEngine.deletingLast(from: tail)
         applyAutoShift()

@@ -357,3 +357,62 @@ final class KeyboardMetricsTests: XCTestCase {
         }
     }
 }
+
+final class CorrectionConfidenceTests: XCTestCase {
+    private let key = "kb.tests.confidence"
+    private var subject: Autocorrect!
+
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: key)
+        subject = Autocorrect(language: "en_US", keptKey: key)
+    }
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: key)
+        super.tearDown()
+    }
+
+    /// Fingers transpose. Charging two edits for a swap would refuse the
+    /// commonest typo there is.
+    func testTranspositionCostsOneEdit() {
+        XCTAssertEqual(TypingEngine.editDistance("teh", "the"), 1)
+        XCTAssertEqual(TypingEngine.editDistance("recieve", "receive"), 1)
+        XCTAssertEqual(TypingEngine.editDistance("cat", "cat"), 0)
+        XCTAssertEqual(TypingEngine.editDistance("mybot", "robot"), 2)
+        XCTAssertEqual(TypingEngine.editDistance("", "abc"), 3)
+    }
+
+    /// The general rule behind "even mybot gets corrected": UITextChecker
+    /// answers every question as though it knew, and for a name or a piece
+    /// of jargon its nearest word can be several edits away. Distance IS
+    /// the confidence it does not report.
+    func testOnlyNearMissesAreAppliedAutomatically() {
+        for word in ["mybot", "hopboard", "zsh", "kubectl", "claude", "testflight",
+                     "whisperkit", "xcodegen"] {
+            if let fix = subject.correction(for: word) {
+                XCTAssertLessThanOrEqual(
+                    TypingEngine.editDistance(word, fix),
+                    Autocorrect.editBudget(for: word),
+                    "\(word) -> \(fix) is too far to be a correction")
+            }
+        }
+        // A real slip still gets fixed; timid is not the same as useless.
+        XCTAssertEqual(subject.correction(for: "teh"), "the")
+    }
+
+    func testLongerWordsEarnSlightlyMoreRoom() {
+        XCTAssertEqual(Autocorrect.editBudget(for: "teh"), 1)
+        XCTAssertEqual(Autocorrect.editBudget(for: "definately"), 2)
+    }
+
+    /// Only the replacement a word break will actually apply may be marked
+    /// default — otherwise the bar promises something that never happens.
+    func testDefaultSlotMatchesWhatWillBeApplied() {
+        for word in ["mybot", "teh", "hopboard", "wierd"] {
+            let suggestions = subject.suggestions(for: word)
+            let marked = suggestions.first(where: \.isDefault)?.text
+            XCTAssertEqual(marked, subject.correction(for: word),
+                           "the bar's default disagrees with auto-apply for \(word)")
+        }
+    }
+}
