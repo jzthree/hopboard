@@ -31,9 +31,11 @@ final class KeyPlaneView: UIView {
     /// change a detached view's idiom.
     var metricsOverride: KeyboardMetrics?
     var metrics: KeyboardMetrics {
-        metricsOverride
-            ?? KeyboardMetrics.forWidth(bounds.width,
-                                        idiom: traitCollection.userInterfaceIdiom)
+        metricsOverride ?? {
+            let screen = (window?.screen ?? UIScreen.main).bounds.size
+            return KeyboardMetrics.forScreen(width: bounds.width, height: screen.height,
+                                             idiom: traitCollection.userInterfaceIdiom)
+        }()
     }
     /// Headroom above the top row: an extension cannot draw outside its own
     /// bounds, so unlike the system keyboard the top row's preview bubble

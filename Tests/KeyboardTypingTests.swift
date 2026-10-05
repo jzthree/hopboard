@@ -283,11 +283,46 @@ final class KeyboardMetricsTests: XCTestCase {
         XCTAssertGreaterThan(pad.keySpacing, phone.keySpacing)
     }
 
-    func testWidthAloneDecidesOrientation() {
-        XCTAssertTrue(KeyboardMetrics.isLandscapePhone(852, .phone))
-        XCTAssertFalse(KeyboardMetrics.isLandscapePhone(393, .phone))
-        // A narrow iPad slide-over is still an iPad, not a sideways phone.
-        XCTAssertFalse(KeyboardMetrics.isLandscapePhone(820, .pad))
+    /// Shape, not device. Width alone stopped being enough the moment a
+    /// folding phone existed: a phone on its side and a foldable opened up
+    /// are both wide, and only one of them wants a squashed keyboard.
+    func testShapeDecidesNotWidthOrDeviceName() {
+        XCTAssertTrue(KeyboardMetrics.isShortScreen(393))
+        XCTAssertFalse(KeyboardMetrics.isShortScreen(852))
+        // Phone on its side: wide, short.
+        XCTAssertFalse(KeyboardMetrics.isTabletShaped(width: 852, height: 393,
+                                                      idiom: .phone))
+        // A foldable opened up: wide AND tall. Tablet-shaped, whatever the
+        // idiom says, and whatever the device turns out to be called.
+        XCTAssertTrue(KeyboardMetrics.isTabletShaped(width: 744, height: 1080,
+                                                     idiom: .phone))
+        // Folded again: an ordinary upright phone.
+        XCTAssertFalse(KeyboardMetrics.isTabletShaped(width: 390, height: 1080,
+                                                      idiom: .phone))
+    }
+
+    /// The backstop for a form factor nobody here has held: get the class
+    /// wrong and the keys are the wrong size, but what you are typing into
+    /// is still on screen.
+    func testTheKeyboardNeverEatsHalfTheScreen() {
+        for (width, height) in [(393.0, 852.0), (852.0, 393.0), (744.0, 1080.0),
+                                (820.0, 1180.0), (375.0, 667.0), (320.0, 480.0)] {
+            let metrics = KeyboardMetrics.forScreen(width: width, height: height,
+                                                    idiom: .phone)
+            XCTAssertLessThanOrEqual(metrics.typingHeight, height * 0.48 + 0.01,
+                                     "\(width)x\(height) keyboard too tall")
+            XCTAssertGreaterThan(metrics.topInset, 20)
+            XCTAssertGreaterThan(metrics.typingHeight, metrics.topInset * 2)
+        }
+    }
+
+    /// An unfolded foldable must not be mistaken for a sideways phone and
+    /// handed the squashed landscape strip.
+    func testAnUnfoldedFoldableGetsRealKeys() {
+        let unfolded = KeyboardMetrics.forScreen(width: 744, height: 1080, idiom: .phone)
+        let sideways = KeyboardMetrics.forScreen(width: 852, height: 393, idiom: .phone)
+        XCTAssertGreaterThan(unfolded.typingHeight, sideways.typingHeight * 1.5)
+        XCTAssertGreaterThan(unfolded.keySpacing, sideways.keySpacing)
     }
 
     /// The invariants have to hold on every device, not just the one the

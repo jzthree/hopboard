@@ -44,9 +44,9 @@ final class KeyboardViewController: UIInputViewController {
         // correction pad temporarily grows it back to ~216.
         if heightConstraint == nil {
             let constraint = view.heightAnchor.constraint(
-                equalToConstant: KeyboardMetrics.forWidth(UIScreen.main.bounds.width,
-                                                          idiom: traitCollection.userInterfaceIdiom)
-                    .remoteHeight)
+                equalToConstant: KeyboardMetrics.forScreen(
+                    width: screenSize.width, height: screenSize.height,
+                    idiom: traitCollection.userInterfaceIdiom).remoteHeight)
             constraint.priority = .init(999)
             constraint.isActive = true
             heightConstraint = constraint
@@ -95,10 +95,18 @@ final class KeyboardViewController: UIInputViewController {
     /// The height the current device and orientation want. Only the
     /// controller knows how wide it has been made, and width is the only
     /// signal an extension gets about which way the phone is held.
+    /// The screen the keyboard is actually on. Both numbers matter: width
+    /// alone cannot tell a phone on its side from a foldable opened up.
+    private var screenSize: CGSize {
+        let screen = view.window?.screen ?? UIScreen.main
+        return screen.bounds.size
+    }
+
     func applyHeight(typing: Bool) {
-        let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
-        let metrics = KeyboardMetrics.forWidth(width,
-                                               idiom: traitCollection.userInterfaceIdiom)
+        let size = screenSize
+        let width = view.bounds.width > 0 ? view.bounds.width : size.width
+        let metrics = KeyboardMetrics.forScreen(width: width, height: size.height,
+                                                idiom: traitCollection.userInterfaceIdiom)
         heightConstraint?.constant = metrics.height(typing: typing)
     }
 
@@ -106,8 +114,11 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillTransition(to size: CGSize,
                                      with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        let metrics = KeyboardMetrics.forWidth(size.width,
-                                               idiom: traitCollection.userInterfaceIdiom)
+        // The screen's own height, not the keyboard's: a fold or a rotation
+        // changes which shape this is, and the transition size is the view.
+        let metrics = KeyboardMetrics.forScreen(
+            width: size.width, height: screenSize.height,
+            idiom: traitCollection.userInterfaceIdiom)
         heightConstraint?.constant = metrics.height(typing: model.typingMode)
     }
 }
