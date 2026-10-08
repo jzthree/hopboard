@@ -538,7 +538,9 @@ struct TypePad: UIViewRepresentable {
         return plane
     }
 
-    func updateUIView(_ uiView: KeyPlaneView, context: Context) {}
+    func updateUIView(_ uiView: KeyPlaneView, context: Context) {
+        uiView.status = model.dictationStatus
+    }
 
     @MainActor
     final class Coordinator: KeyPlaneDelegate {
@@ -552,6 +554,8 @@ struct TypePad: UIViewRepresentable {
         func keyPlaneDidTapReturn(_ plane: KeyPlaneView) { model.returnTapped() }
         func keyPlaneDidTapDictation(_ plane: KeyPlaneView) { model.dictationKeyTapped() }
         func keyPlaneDidHoldDictation(_ plane: KeyPlaneView) { model.setTyping(false) }
+        func keyPlaneStripPrimary(_ plane: KeyPlaneView) { model.stripPrimary() }
+        func keyPlaneStripSecondary(_ plane: KeyPlaneView) { model.stripSecondary() }
         func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String) {
             model.replaceLast(count, with: text)
         }

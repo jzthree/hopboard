@@ -35,17 +35,66 @@ final class KeyboardModel: ObservableObject {
     /// keyboard that dumps you back on the dictation row every time it
     /// reappears cannot be anyone's default. It stopped being a temporary
     /// correction pad when it grew autocorrect.
-    @Published private(set) var typingMode = UserDefaults.standard.bool(forKey: KeyboardModel.typingModeKey)
+    @Published private(set) var typingMode = KeyboardModel.initialTypingMode()
     private static let typingModeKey = "kb.typingMode"
-    /// A dictation started FROM the keys. Not a mode — an errand: the keys
-    /// are still where you live, this is a trip out and back, and nothing
-    /// about it touches the persisted home above. Transient on purpose, so
-    /// a keyboard torn down mid-errand comes back to the keys.
-    @Published private(set) var dictationExcursion = false
+    private static let homeMigratedKey = "kb.keyboardIsHome"
 
-    /// Whether the keys are showing. The home preference, unless an errand
-    /// is in flight.
-    var showsKeys: Bool { typingMode && !dictationExcursion }
+    /// THE KEYS ARE HOME. Not the dictation row — that is where you go to
+    /// say something, and you come straight back.
+    ///
+    /// This was wrong in the most boring way possible: the stored value is
+    /// read with UserDefaults.bool, which answers false for a key that was
+    /// never set, so an unset preference meant "open on the dictation
+    /// row". Every bit of the tap-once-to-dictate work was unreachable
+    /// behind it, because you had to find the abc key first.
+    ///
+    /// A stored false is also not evidence of a preference: under the old
+    /// design the mic key wrote exactly that, every time, just to REACH
+    /// the dictation row. So the legacy value is cleared once rather than
+    /// honoured, and only choices made from here on persist.
+    private static func initialTypingMode() -> Bool {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: homeMigratedKey) == nil {
+            defaults.set(true, forKey: homeMigratedKey)
+            defaults.set(true, forKey: typingModeKey)
+            return true
+        }
+        return defaults.bool(forKey: typingModeKey)
+    }
+    /// Whether the keys are showing. Dictation no longer takes them away:
+    /// it borrows the candidate row above them and gives it back. There is
+    /// no mode to be in, which is the whole idea.
+    var showsKeys: Bool { typingMode }
+
+    /// What the strip above the keys should be saying.
+    var dictationStatus: DictationStatus {
+        switch state {
+        case .recording:
+            return DictationStatus(phase: .recording, startedAt: recordingStartedAt,
+                                   level: micLevel, canRetranscribe: canRetranscribe)
+        case .transcribing:
+            return DictationStatus(phase: .transcribing, startedAt: transcribingStartedAt,
+                                   canRetranscribe: canRetranscribe)
+        default:
+            guard pendingResult != nil else { return DictationStatus() }
+            return DictationStatus(phase: .pending, canRetranscribe: canRetranscribe)
+        }
+    }
+
+    /// The strip's main action, whatever it currently reads as.
+    func stripPrimary() {
+        switch state {
+        case .recording: micTapped()
+        default: insertPending()
+        }
+    }
+
+    func stripSecondary() {
+        switch state {
+        case .recording: discardRecording()
+        default: retranscribeLast()
+        }
+    }
     /// When the current recording started — drives the live timer that
     /// makes the recording state unmissable.
     @Published private(set) var recordingStartedAt: Date?
@@ -59,6 +108,7 @@ final class KeyboardModel: ObservableObject {
     private let store = FlowStore()
     private let bus = DarwinBus()
     private var pollTimer: Timer?
+    private var lastPollWanted = false
     /// A tap's expected state, displayed for at most 2 s while the command
     /// travels to the app. After that (or once the store confirms), the
     /// display always follows the store — the engine's true state.
@@ -146,9 +196,28 @@ final class KeyboardModel: ObservableObject {
             }
             self.refresh()
         }
-        // Darwin notifications cover the happy path; the poll covers a
-        // suspended app, dropped notifications, and heartbeat expiry.
+        syncPollTimer()
+    }
+
+    /// The 0.35s poll exists for dictation: a suspended app, a dropped
+    /// notification, an expired heartbeat. While the KEYS are up it buys
+    /// nothing and costs a great deal — every tick is six keychain round
+    /// trips and up to four JSON decodes of the result list, synchronously,
+    /// on the same main thread that has to deliver the next touch and draw
+    /// the next frame. Three times a second, underneath someone typing.
+    /// Darwin notifications still arrive, so nothing is missed; the timer
+    /// is only the backstop, and a backstop has no business running while
+    /// its subject is idle.
+    private func syncPollTimer() {
         pollTimer?.invalidate()
+        pollTimer = nil
+        defer { lastPollWanted = pollTimer != nil }
+        // Dictation still needs the backstop even while the keys are up —
+        // that is the one time something is happening that no keystroke
+        // will tell us about.
+        let dictating = state == .recording || state == .transcribing
+            || pendingResult != nil
+        guard isVisible, !showsKeys || dictating else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -209,7 +278,7 @@ final class KeyboardModel: ObservableObject {
     /// so no result can arrive to insert.
     func discardRecording() {
         guard state == .recording else { return }
-        endExcursion()
+        syncPollTimer()
         send(.cancelSegment)
         awaitingResultSince = nil
         recordingStartedAt = nil
@@ -220,7 +289,7 @@ final class KeyboardModel: ObservableObject {
     func endSessionTapped() {
         send(.endSession)
         state = .noSession
-        endExcursion()
+        syncPollTimer()
     }
 
     /// The mic key on the keyboard. Switching to a dictation screen and
@@ -232,24 +301,18 @@ final class KeyboardModel: ObservableObject {
     /// Without a live session it stays a mode change, because the dictation
     /// row is the only place Start Session exists.
     func dictationKeyTapped() {
+        // The poll has been asleep while you typed, so the cached state may
+        // be old. Read it once, here, where the answer matters.
+        refresh()
         guard store.sessionAlive, state == .ready else {
             setTyping(false)
             return
         }
-        dictationExcursion = true
         micTapped()
+        syncPollTimer()
     }
 
-    /// Back to the keys. Called when the words have LANDED — not merely
-    /// when they arrived: a dictation that could not be inserted is still
-    /// offering itself on the Insert pill, and the pill lives on the
-    /// dictation row. Leaving then would hide the one affordance that keeps
-    /// the never-only-in-history promise.
-    private func endExcursion() {
-        guard dictationExcursion else { return }
-        dictationExcursion = false
-        controller?.applyHeight(typing: typingMode)
-    }
+
 
     /// Tone chip: cycle Formal → Casual → no caps → Excited!.
     func cycleTone() {
@@ -311,12 +374,11 @@ final class KeyboardModel: ObservableObject {
     }
 
     func setTyping(_ on: Bool) {
-        // An explicit choice outranks an errand in progress.
-        dictationExcursion = false
         typingMode = on
         UserDefaults.standard.set(on, forKey: Self.typingModeKey)
         showingHistory = false
         controller?.applyHeight(typing: on)
+        syncPollTimer()
     }
 
     /// What precedes the cursor right now, for seeding the pad's shift
@@ -450,7 +512,7 @@ final class KeyboardModel: ObservableObject {
             // and give the keys back — there is nothing to offer.
             store.lastConsumedResultID = result.id
             awaitingResultSince = nil
-            endExcursion()
+            syncPollTimer()
             return
         }
         // It arrived; stop waiting either way. Success is decided by the
@@ -558,7 +620,7 @@ final class KeyboardModel: ObservableObject {
         }
         guard verdict.isDelivered else { return }
         flashInserted()
-        endExcursion()
+        syncPollTimer()
     }
 
     private func updatePendingResult() {

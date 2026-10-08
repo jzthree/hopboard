@@ -206,6 +206,8 @@ final class CandidateBarView: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
 
+    var isEmpty: Bool { suggestions.isEmpty }
+
     func show(_ new: [Autocorrect.Suggestion]) {
         guard new != suggestions else { return }
         suggestions = new

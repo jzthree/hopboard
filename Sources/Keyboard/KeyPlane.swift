@@ -9,6 +9,10 @@ protocol KeyPlaneDelegate: AnyObject {
     /// Hold the mic key: go to the dictation row itself, where language,
     /// tone, history and settings live.
     func keyPlaneDidHoldDictation(_ plane: KeyPlaneView)
+    /// The dictation strip's two actions: stop-or-insert, and
+    /// discard-or-transcribe-again.
+    func keyPlaneStripPrimary(_ plane: KeyPlaneView)
+    func keyPlaneStripSecondary(_ plane: KeyPlaneView)
     /// Swap the word just typed for its correction: delete that many
     /// characters, then insert.
     func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String)
@@ -80,16 +84,38 @@ final class KeyPlaneView: UIView {
     private var revert: (original: String, applied: String, trailing: String)?
     private var revertArming = false
     private let candidates = CandidateBarView()
+    private let strip = DictationStripView()
+    /// Dictation takes the candidate row while it is happening; the keys
+    /// themselves never move.
+    var status = DictationStatus() {
+        didSet {
+            guard status != oldValue else { return }
+            strip.show(status)
+            candidates.isHidden = status.phase != .none || candidates.isEmpty
+        }
+    }
     /// UITextChecker's guesses() is the expensive call on this path; don't
     /// re-ask it for a word that has not changed.
     private var lastCandidateWord: String?
+    private var candidateWork: DispatchWorkItem?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isMultipleTouchEnabled = true
         clipsToBounds = true
         addSubview(candidates)
+        addSubview(strip)
         candidates.onPick = { [weak self] suggestion in self?.pick(suggestion) }
+        strip.onPrimary = { [weak self] in
+            guard let self else { return }
+            KeyFeedback.tap()
+            self.delegate?.keyPlaneStripPrimary(self)
+        }
+        strip.onSecondary = { [weak self] in
+            guard let self else { return }
+            KeyFeedback.tap()
+            self.delegate?.keyPlaneStripSecondary(self)
+        }
         rebuildKeys()
     }
 
@@ -103,11 +129,25 @@ final class KeyPlaneView: UIView {
         refreshCandidates()
     }
 
+    /// Candidates are computed AFTER the typing pauses, never during it.
+    /// UITextChecker's guesses() is tens of milliseconds and this used to
+    /// run inside the key's own touch handler, once per letter — a hitch
+    /// on every keystroke to update a bar nobody can read mid-word anyway.
+    /// A sixth of a second late is invisible; the hitch was not.
+    private func scheduleCandidates() {
+        candidateWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refreshCandidates() }
+        candidateWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: work)
+    }
+
     private func refreshCandidates() {
         let word = TypingEngine.currentWord(in: tail)
         guard word != lastCandidateWord else { return }
         lastCandidateWord = word
         candidates.show(autocorrect.suggestions(for: word))
+        // Dictation owns the row while it has something to say.
+        if status.phase != .none { candidates.isHidden = true }
     }
 
     /// A tapped slot. The literal is a refusal, and a refusal is a lesson:
@@ -157,8 +197,10 @@ final class KeyPlaneView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        candidates.frame = CGRect(x: 0, y: 0, width: bounds.width,
-                                  height: max(topInset - 8, 0))
+        let stripFrame = CGRect(x: 0, y: 0, width: bounds.width,
+                                height: max(topInset - 8, 0))
+        candidates.frame = stripFrame
+        strip.frame = stripFrame
         frames = KeyGeometry.frames(rows: rows, in: bounds.size, metrics: metrics)
         for (rowIndex, row) in keyViews.enumerated() {
             for (colIndex, view) in row.enumerated() {
@@ -198,6 +240,12 @@ final class KeyPlaneView: UIView {
     }
 
     private func switchTo(_ layer: KeyLayer) {
+        // Any OTHER finger still down is holding row/col indices into the
+        // layout that is about to stop existing — and the layers are not
+        // the same shape, so those indices can run off the end. Two thumbs
+        // and a 123 key is all it takes.
+        for (_, other) in touching { other.longPress?.invalidate() }
+        touching.removeAll()
         keyLayer = layer
         rows = KeyLayout.rows(for: layer)
         if layer != .letters { isCapsLocked = false }
@@ -211,8 +259,20 @@ final class KeyPlaneView: UIView {
                           in: frames)
     }
 
-    private func cap(_ state: Touching) -> KeyCap { rows[state.row].keys[state.col] }
-    private func view(_ state: Touching) -> KeyView { keyViews[state.row][state.col] }
+    /// Clamped, not force-indexed. Belt and braces behind the touch purge
+    /// above: a keyboard that traps on an index is worse than one that
+    /// types the wrong letter, which is the whole philosophy here.
+    private func cap(_ state: Touching) -> KeyCap {
+        let row = min(max(state.row, 0), rows.count - 1)
+        let col = min(max(state.col, 0), rows[row].keys.count - 1)
+        return rows[row].keys[col]
+    }
+
+    private func view(_ state: Touching) -> KeyView {
+        let row = min(max(state.row, 0), keyViews.count - 1)
+        let col = min(max(state.col, 0), keyViews[row].count - 1)
+        return keyViews[row][col]
+    }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
@@ -321,7 +381,7 @@ final class KeyPlaneView: UIView {
             revert = nil
         }
         applyAutoShift()
-        refreshCandidates()
+        scheduleCandidates()
     }
 
     private func applyAutoShift() {
@@ -360,7 +420,7 @@ final class KeyPlaneView: UIView {
         delegate?.keyPlaneDidBackspace(self)
         tail = TypingEngine.deletingLast(from: tail)
         applyAutoShift()
-        refreshCandidates()
+        scheduleCandidates()
         repeatTimer?.invalidate()
         // Hold-to-repeat, then faster — the system's two-stage feel.
         repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
@@ -373,7 +433,7 @@ final class KeyPlaneView: UIView {
                     self.delegate?.keyPlaneDidBackspace(self)
                     self.tail = TypingEngine.deletingLast(from: self.tail)
                     self.applyAutoShift()
-                    self.refreshCandidates()
+                    self.scheduleCandidates()
                 }
             }
         }

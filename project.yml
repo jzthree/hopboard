@@ -126,6 +126,7 @@ targets:
       # chrome that has never been looked at is how the Insert pill got a
       # tap target the size of its label.
       - Sources/Keyboard/KeyFeedback.swift
+      - Sources/Keyboard/DictationStrip.swift
       - Sources/Keyboard/KeyViews.swift
       - Sources/Keyboard/KeyPlane.swift
     dependencies:
