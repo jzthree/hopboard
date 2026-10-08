@@ -37,6 +37,15 @@ final class KeyboardModel: ObservableObject {
     /// correction pad when it grew autocorrect.
     @Published private(set) var typingMode = UserDefaults.standard.bool(forKey: KeyboardModel.typingModeKey)
     private static let typingModeKey = "kb.typingMode"
+    /// A dictation started FROM the keys. Not a mode — an errand: the keys
+    /// are still where you live, this is a trip out and back, and nothing
+    /// about it touches the persisted home above. Transient on purpose, so
+    /// a keyboard torn down mid-errand comes back to the keys.
+    @Published private(set) var dictationExcursion = false
+
+    /// Whether the keys are showing. The home preference, unless an errand
+    /// is in flight.
+    var showsKeys: Bool { typingMode && !dictationExcursion }
     /// When the current recording started — drives the live timer that
     /// makes the recording state unmissable.
     @Published private(set) var recordingStartedAt: Date?
@@ -194,6 +203,7 @@ final class KeyboardModel: ObservableObject {
     /// so no result can arrive to insert.
     func discardRecording() {
         guard state == .recording else { return }
+        endExcursion()
         send(.cancelSegment)
         awaitingResultSince = nil
         recordingStartedAt = nil
@@ -204,6 +214,35 @@ final class KeyboardModel: ObservableObject {
     func endSessionTapped() {
         send(.endSession)
         state = .noSession
+        endExcursion()
+    }
+
+    /// The mic key on the keyboard. Switching to a dictation screen and
+    /// then pressing record is two taps to say one thing, and the first one
+    /// carries no meaning the second does not — so when there is a session
+    /// to speak into, this IS the record button. The keys come back on
+    /// their own once the words land.
+    ///
+    /// Without a live session it stays a mode change, because the dictation
+    /// row is the only place Start Session exists.
+    func dictationKeyTapped() {
+        guard store.sessionAlive, state == .ready else {
+            setTyping(false)
+            return
+        }
+        dictationExcursion = true
+        micTapped()
+    }
+
+    /// Back to the keys. Called when the words have LANDED — not merely
+    /// when they arrived: a dictation that could not be inserted is still
+    /// offering itself on the Insert pill, and the pill lives on the
+    /// dictation row. Leaving then would hide the one affordance that keeps
+    /// the never-only-in-history promise.
+    private func endExcursion() {
+        guard dictationExcursion else { return }
+        dictationExcursion = false
+        controller?.applyHeight(typing: typingMode)
     }
 
     /// Tone chip: cycle Formal → Casual → no caps → Excited!.
@@ -266,6 +305,8 @@ final class KeyboardModel: ObservableObject {
     }
 
     func setTyping(_ on: Bool) {
+        // An explicit choice outranks an errand in progress.
+        dictationExcursion = false
         typingMode = on
         UserDefaults.standard.set(on, forKey: Self.typingModeKey)
         showingHistory = false
@@ -399,9 +440,11 @@ final class KeyboardModel: ObservableObject {
               Date().timeIntervalSince(since) <= Self.waitBudget,
               result.finishedAt >= since.timeIntervalSince1970 - 1 else { return }
         guard !result.text.isEmpty else {
-            // Nothing was said: acknowledge it so the spinner is released.
+            // Nothing was said: acknowledge it so the spinner is released,
+            // and give the keys back — there is nothing to offer.
             store.lastConsumedResultID = result.id
             awaitingResultSince = nil
+            endExcursion()
             return
         }
         // It arrived; stop waiting either way. Success is decided by the
@@ -509,6 +552,7 @@ final class KeyboardModel: ObservableObject {
         }
         guard verdict.isDelivered else { return }
         flashInserted()
+        endExcursion()
     }
 
     private func updatePendingResult() {

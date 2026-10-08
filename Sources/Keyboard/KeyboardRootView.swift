@@ -12,7 +12,7 @@ struct KeyboardRootView: View {
 
     var body: some View {
         Group {
-            if model.typingMode {
+            if model.showsKeys {
                 // EDGE TO EDGE. The 8pt gutter the dictation row wants is,
                 // on a keyboard, 8pt of taps that land on nothing — and the
                 // outermost keys are exactly where a thumb overshoots. The
@@ -550,7 +550,8 @@ struct TypePad: UIViewRepresentable {
         }
         func keyPlaneDidBackspace(_ plane: KeyPlaneView) { model.deleteTapped() }
         func keyPlaneDidTapReturn(_ plane: KeyPlaneView) { model.returnTapped() }
-        func keyPlaneDidTapDictation(_ plane: KeyPlaneView) { model.setTyping(false) }
+        func keyPlaneDidTapDictation(_ plane: KeyPlaneView) { model.dictationKeyTapped() }
+        func keyPlaneDidHoldDictation(_ plane: KeyPlaneView) { model.setTyping(false) }
         func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String) {
             model.replaceLast(count, with: text)
         }

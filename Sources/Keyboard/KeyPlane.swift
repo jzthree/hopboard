@@ -6,6 +6,9 @@ protocol KeyPlaneDelegate: AnyObject {
     func keyPlaneDidBackspace(_ plane: KeyPlaneView)
     func keyPlaneDidTapReturn(_ plane: KeyPlaneView)
     func keyPlaneDidTapDictation(_ plane: KeyPlaneView)
+    /// Hold the mic key: go to the dictation row itself, where language,
+    /// tone, history and settings live.
+    func keyPlaneDidHoldDictation(_ plane: KeyPlaneView)
     /// Swap the word just typed for its correction: delete that many
     /// characters, then insert.
     func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String)
@@ -61,6 +64,8 @@ final class KeyPlaneView: UIView {
         var preview: KeyPreviewView?
         var alternates: AlternatesView?
         var longPress: Timer?
+        /// A hold already did the key's work; lifting must not do it again.
+        var consumed = false
         init(row: Int, col: Int) { self.row = row; self.col = col }
     }
     private var touching: [ObjectIdentifier: Touching] = [:]
@@ -263,7 +268,7 @@ final class KeyPlaneView: UIView {
         state.alternates?.removeFromSuperview()
         state.alternates = nil
         if cap(state).action == .backspace { stopBackspaceRepeat() }
-        guard commit else { return }
+        guard commit, !state.consumed else { return }
         if let chosen {
             insert(chosen)
             return
@@ -408,6 +413,24 @@ final class KeyPlaneView: UIView {
 
     private func armLongPress(_ state: Touching) {
         state.longPress?.invalidate()
+        // The mic key's hold is a destination, not a character: tapping it
+        // now starts dictating straight away, so holding is the only way
+        // left to REACH the dictation row — where language, tone, history
+        // and transcribe-again live. Without this they are unreachable
+        // from the keys.
+        if cap(state).action == .dictation {
+            state.longPress = Timer.scheduledTimer(withTimeInterval: 0.45,
+                                                   repeats: false) { [weak self, weak state] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let state else { return }
+                    state.consumed = true
+                    self.highlight(state, on: false)
+                    KeyFeedback.tap()
+                    self.delegate?.keyPlaneDidHoldDictation(self)
+                }
+            }
+            return
+        }
         let options = cap(state).alternates
         guard !options.isEmpty else { return }
         state.longPress = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) {
