@@ -19,12 +19,15 @@ struct KeyboardRootView: View {
                 // grid keeps its own small inset inside these bounds.
                 TypePad(model: model)
             } else {
-                VStack(spacing: 4) {
+                // No outer gutter and no gap between the rows: both were
+                // strips of keyboard that swallowed taps. The margins you
+                // can see come from the drawn surfaces being inset inside
+                // their own tap areas.
+                VStack(spacing: 0) {
                     centerStage
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     keyRow
                 }
-                .padding(.horizontal, 8)
             }
         }
         .tint(FlowBrand.accent)
@@ -347,7 +350,7 @@ struct KeyboardRootView: View {
         RoundedRectangle(cornerRadius: 12)
             .fill(tint.opacity(0.12))
             .padding(.vertical, 5)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, 8)
     }
 
     /// Text-only pill (language): narrower than a Label, and the text is
@@ -415,35 +418,39 @@ struct KeyboardRootView: View {
     /// Globe fixed; space/delete/return share the width equally — return
     /// and delete get used at least as often as space here.
     private var keyRow: some View {
-        HStack(spacing: 8) {
+        // Spacing ZERO, and every key's cell runs edge to edge. The gaps a
+        // tidy HStack puts between keys are precisely where a thumb that
+        // missed lands, and landing on a neighbour beats landing on
+        // nothing. What you SEE is still separated — the drawn cap is
+        // inset inside the cell by .keyCell(), the same trade the dictation
+        // surface already makes.
+        HStack(spacing: 0) {
             if model.showsGlobe {
                 GlobeKey(controller: model.globeController)
-                    .frame(width: 44, height: 42)
-                    .background(keyBackground)
+                    .frame(width: 50)
+                    .keyCell()
             }
             Button {
                 model.setTyping(true)
             } label: {
                 Text("abc")
                     .font(.subheadline)
-                    .frame(width: 44, height: 42)
-                    .background(keyBackground)
-                    .contentShape(Rectangle())
+                    .frame(width: 50)
+                    .keyCell()
             }
             .buttonStyle(KeyStyle())
             .accessibilityLabel("Type instead of dictating")
             key("space", flexible: true) { model.spaceTapped() }
             RepeatKey(systemName: "delete.left") { model.deleteTapped() }
                 .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .background(keyBackground)
+                .keyCell()
             // A key that says what it will do: mid-dictation this one ends
             // the recording rather than typing a newline.
             key(model.state == .recording ? "stop" : "return",
                 flexible: true) { model.returnTapped() }
             if sessionActive { endKey }
         }
-        .frame(height: 42)
+        .frame(height: 44)
     }
 
     private var sessionActive: Bool {
@@ -477,9 +484,8 @@ struct KeyboardRootView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: endArmed ? 52 : 40, height: 42)
-            .background(keyBackground)
-            .contentShape(Rectangle())
+            .frame(width: endArmed ? 58 : 46)
+            .keyCell()
         }
         .buttonStyle(KeyStyle())
         .accessibilityLabel(endArmed ? "Confirm end session" : "End Session")
@@ -490,19 +496,13 @@ struct KeyboardRootView: View {
         }
     }
 
-    private var keyBackground: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(Color(.secondarySystemFill))
-    }
-
     private func key(_ label: String, flexible: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.subheadline)
                 .frame(maxWidth: flexible ? .infinity : nil)
-                .padding(.horizontal, flexible ? 0 : 16)
-                .frame(height: 42)
-                .background(keyBackground)
+                .padding(.horizontal, flexible ? 0 : 14)
+                .keyCell()
         }
         .buttonStyle(KeyStyle())
     }
@@ -655,5 +655,23 @@ extension View {
         .onPreferenceChange(ClusterWidthKey.self) { measured in
             if abs(width.wrappedValue - measured) > 0.5 { width.wrappedValue = measured }
         }
+    }
+}
+
+
+extension View {
+    /// A key whose TAP AREA is its whole cell and whose drawn cap is inset
+    /// inside it. Every point between two keys belongs to one of them, so
+    /// a thumb that lands in the crack still types — a wrong character is
+    /// recoverable, a tap that does nothing teaches nothing.
+    func keyCell() -> some View {
+        frame(maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(.secondarySystemFill))
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 1)
+            )
+            .contentShape(Rectangle())
     }
 }
