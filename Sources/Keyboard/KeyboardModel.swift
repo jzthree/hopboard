@@ -137,7 +137,13 @@ final class KeyboardModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.ipcAvailable = self.store.isAvailable
-            if self.ipcAvailable { self.store.keyboardSeen = true }
+            if self.ipcAvailable {
+                self.store.keyboardSeen = true
+                // Stamp which binary is actually running. Written only on a
+                // change — this is a keychain round trip, not a counter.
+                let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+                if self.store.keyboardBuild != build { self.store.keyboardBuild = build }
+            }
             self.refresh()
         }
         // Darwin notifications cover the happy path; the poll covers a

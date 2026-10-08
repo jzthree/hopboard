@@ -213,6 +213,14 @@ final class SessionManager: ObservableObject {
     /// updates the moment the user returns from Settings.
     @Published private(set) var keyboardEnabled = false
 
+    /// This app's build, and the build of the keyboard that last ran. They
+    /// should match; when they do not, iOS is still running an old
+    /// extension and no amount of reinstalling the app will show a change.
+    var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
+    var keyboardBuild: String { store.keyboardBuild }
+
     private func refreshDeliveries() {
         let latest = Dictionary(store.deliveries.map { ($0.id, $0) },
                                 uniquingKeysWith: { _, newer in newer })

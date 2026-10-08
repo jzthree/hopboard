@@ -413,6 +413,26 @@ struct ContentView: View {
         }
     }
 
+    /// Which binaries are actually running. iOS keeps an old keyboard
+    /// extension alive across app reinstalls, so a mismatch here is the
+    /// difference between "the update did not land" and "the update
+    /// changed nothing you can see".
+    private var buildStamp: some View {
+        let keyboard = session.keyboardBuild
+        let stale = !keyboard.isEmpty && keyboard != session.appBuild
+        return HStack(spacing: 4) {
+            Image(systemName: stale ? "exclamationmark.triangle.fill" : "checkmark.seal")
+            Text(keyboard.isEmpty
+                 ? "App build \(session.appBuild) · keyboard not run yet"
+                 : "App build \(session.appBuild) · keyboard build \(keyboard)")
+            if stale {
+                Text("— iOS is still running the old keyboard. Remove and re-add HopBoard in Settings ▸ Keyboards.")
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(stale ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
+    }
+
     // MARK: history
 
     private var historySection: some View {
@@ -479,6 +499,7 @@ struct ContentView: View {
         } footer: {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Tap a dictation to copy it. Everything is transcribed on-device; audio never leaves your iPhone.")
+                buildStamp
                 if session.canRetranscribe {
                     Button {
                         session.retranscribe()

@@ -176,6 +176,7 @@ final class FlowStore {
         static let favoriteLanguagesCustomized = "flow.favLangCustom"
         static let autoLanguageAllowed = "flow.autoLangAllowed"
         static let canRetranscribe = "flow.canRetranscribe"
+        static let keyboardBuild = "flow.keyboardBuild"
     }
 
     init(backend: FlowBackend = KeychainBackend()) {
@@ -224,6 +225,17 @@ final class FlowStore {
     var micLevel: Float {
         get { Float(double(Key.micLevel)) }
         set { setString(String(newValue), Key.micLevel) }
+    }
+
+    /// Which build of the KEYBOARD last ran, written by the extension
+    /// itself. iOS keeps a keyboard extension's old binary alive long
+    /// after the containing app has been replaced, so "I installed it and
+    /// nothing changed" has two very different causes — a stale extension,
+    /// or a change that was never visible — and no way to tell them apart
+    /// by looking. This tells them apart.
+    var keyboardBuild: String {
+        get { string(Key.keyboardBuild) ?? "" }
+        set { setString(newValue, Key.keyboardBuild) }
     }
 
     /// Whether the app still holds the last dictation's audio, so the
