@@ -46,11 +46,12 @@ final class KeyboardViewController: UIInputViewController {
             let constraint = view.heightAnchor.constraint(
                 equalToConstant: KeyboardMetrics.forScreen(
                     width: screenSize.width, height: screenSize.height,
-                    idiom: traitCollection.userInterfaceIdiom).remoteHeight)
+                    idiom: traitCollection.userInterfaceIdiom).typingHeight)
             constraint.priority = .init(999)
             constraint.isActive = true
             heightConstraint = constraint
         }
+        applyHeight()
         model.becameVisible(showsGlobe: needsInputModeSwitchKey)
     }
 
@@ -114,12 +115,19 @@ final class KeyboardViewController: UIInputViewController {
         return screen.bounds.size
     }
 
-    func applyHeight(typing: Bool) {
+    /// One view, one height. This used to take a `typing:` flag and the
+    /// call that passed it was deleted with the dictation row, leaving the
+    /// constraint at the value it was BORN with — the old remote's 124pt,
+    /// with four rows and a 46pt strip to fit inside it. About eleven
+    /// points a key. A default that is only correct until someone
+    /// remembers to override it is a trap, so there is nothing to override
+    /// any more.
+    func applyHeight() {
         let size = screenSize
         let width = view.bounds.width > 0 ? view.bounds.width : size.width
-        let metrics = KeyboardMetrics.forScreen(width: width, height: size.height,
-                                                idiom: traitCollection.userInterfaceIdiom)
-        heightConstraint?.constant = metrics.height(typing: typing)
+        heightConstraint?.constant = KeyboardMetrics.forScreen(
+            width: width, height: size.height,
+            idiom: traitCollection.userInterfaceIdiom).typingHeight
     }
 
     /// Rotation changes the answer, and nothing else asks again.
@@ -128,10 +136,9 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillTransition(to: size, with: coordinator)
         // The screen's own height, not the keyboard's: a fold or a rotation
         // changes which shape this is, and the transition size is the view.
-        let metrics = KeyboardMetrics.forScreen(
+        heightConstraint?.constant = KeyboardMetrics.forScreen(
             width: size.width, height: screenSize.height,
-            idiom: traitCollection.userInterfaceIdiom)
-        heightConstraint?.constant = metrics.height(typing: true)
+            idiom: traitCollection.userInterfaceIdiom).typingHeight
     }
 }
 

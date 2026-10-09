@@ -10,10 +10,13 @@ import UIKit
 /// app which way it is held, but it is always told how wide it has been
 /// made.
 struct KeyboardMetrics: Equatable {
-    /// The keys-and-candidates keyboard.
+    /// How tall the keyboard is. There is only one height, because there
+    /// is only one view: the second value that used to live here was the
+    /// dictation remote's 124pt, and when the call that overrode it was
+    /// deleted along with that remote, the constraint simply kept the
+    /// wrong number and squashed four rows into it. A value that is only
+    /// correct when someone remembers to replace it should not exist.
     var typingHeight: CGFloat
-    /// The dictation remote — one row and a key strip, never a keyboard.
-    var remoteHeight: CGFloat
     /// Headroom above the top row, shared by preview bubbles and the
     /// candidate bar, since an extension cannot paint outside its bounds.
     var topInset: CGFloat
@@ -47,19 +50,18 @@ struct KeyboardMetrics: Equatable {
         if isShortScreen(height) {
             // Short rows and a thin strip: the screen is mostly keyboard
             // otherwise, and what you are typing into disappears.
-            metrics = KeyboardMetrics(typingHeight: 172, remoteHeight: 96,
+            metrics = KeyboardMetrics(typingHeight: 172,
                                       topInset: 34, rowSpacing: 6, keySpacing: 5,
                                       sideInset: 3, bottomInset: 3, touchRise: 3)
         } else if isTabletShaped(width: width, height: height, idiom: idiom) {
             // Full-size keys; the hand is resting, not reaching.
             let wide = width > 900
             metrics = KeyboardMetrics(typingHeight: wide ? 384 : 320,
-                                      remoteHeight: wide ? 168 : 150,
                                       topInset: wide ? 62 : 56,
                                       rowSpacing: 14, keySpacing: 10,
                                       sideInset: 6, bottomInset: 8, touchRise: 5)
         } else {
-            metrics = KeyboardMetrics(typingHeight: 258, remoteHeight: 124,
+            metrics = KeyboardMetrics(typingHeight: 258,
                                       topInset: 46, rowSpacing: 10, keySpacing: 6,
                                       sideInset: 3, bottomInset: 5, touchRise: 4)
         }
@@ -73,7 +75,6 @@ struct KeyboardMetrics: Equatable {
                 let scale = ceiling / metrics.typingHeight
                 metrics.typingHeight = ceiling
                 metrics.topInset = max(metrics.topInset * scale, 26)
-                metrics.remoteHeight = min(metrics.remoteHeight, height * 0.3)
             }
         }
         return metrics
@@ -87,6 +88,4 @@ struct KeyboardMetrics: Equatable {
         forScreen(width: width, height: width > 500 && idiom != .pad ? 400 : 900,
                   idiom: idiom)
     }
-
-    func height(typing: Bool) -> CGFloat { typing ? typingHeight : remoteHeight }
 }

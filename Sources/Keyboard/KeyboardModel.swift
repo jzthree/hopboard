@@ -202,6 +202,7 @@ final class KeyboardModel: ObservableObject {
     func becameVisible(showsGlobe: Bool) {
         isVisible = true
         self.showsGlobe = showsGlobe
+        controller?.applyHeight()
         // NO keychain traffic on the launch path: the keyboard service's
         // watchdog kills slow cold starts (worst right after an app update,
         // when everything is uncached) and iOS then skips to the next

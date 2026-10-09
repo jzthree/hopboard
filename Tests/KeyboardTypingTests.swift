@@ -273,7 +273,6 @@ final class KeyboardMetricsTests: XCTestCase {
     func testLandscapePhoneIsMuchShorter() {
         XCTAssertLessThan(phoneWide.typingHeight, phone.typingHeight * 0.75)
         XCTAssertLessThan(phoneWide.topInset, phone.topInset)
-        XCTAssertLessThan(phoneWide.remoteHeight, phone.remoteHeight)
     }
 
     /// And a tablet is not a stretched phone: resting hands want real keys.
@@ -453,5 +452,39 @@ final class GlobeKeyTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(b.minX, a.maxX - 0.01)
         }
         XCTAssertEqual(bottom.last!.maxX, 393 - metrics.sideInset, accuracy: 0.01)
+    }
+}
+
+/// The keys were eleven points tall on build 85, because the height
+/// constraint kept the value it was born with after the call that
+/// overrode it was deleted. Geometry alone could not catch that — the
+/// layout was correct, it was just being handed the wrong box. So the
+/// test is on the box: whatever height the metrics hand out, keys that
+/// come out of it have to be reachable by a finger.
+final class KeyHeightTests: XCTestCase {
+    func testEveryDeviceGetsKeysAFingerCanHit() {
+        let screens: [(String, CGFloat, CGFloat, UIUserInterfaceIdiom)] = [
+            ("phone portrait", 393, 852, .phone),
+            ("phone landscape", 852, 393, .phone),
+            ("small phone", 375, 667, .phone),
+            ("pad portrait", 820, 1180, .pad),
+            ("pad landscape", 1180, 820, .pad),
+            ("foldable open", 744, 1080, .phone),
+        ]
+        for (name, width, height, idiom) in screens {
+            let metrics = KeyboardMetrics.forScreen(width: width, height: height,
+                                                    idiom: idiom)
+            let size = CGSize(width: width, height: metrics.typingHeight)
+            let grid = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters,
+                                                               showsGlobe: true),
+                                          in: size, metrics: metrics)
+            let keyHeight = grid[0][0].height
+            // Apple's own guidance is 44pt; a keyboard packs tighter than
+            // that, but 28 is the floor where aiming stops working.
+            XCTAssertGreaterThanOrEqual(keyHeight, 28,
+                                        "\(name): keys are \(keyHeight)pt tall")
+            XCTAssertGreaterThan(metrics.typingHeight, metrics.topInset * 2,
+                                 "\(name): the strip is eating the keyboard")
+        }
     }
 }
