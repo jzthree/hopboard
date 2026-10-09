@@ -19,6 +19,10 @@ enum Flow {
     static let startSessionURL = URL(string: "hopboard://session/start")!
     /// The keyboard's gear: open the app straight to dictation settings.
     static let settingsURL = URL(string: "hopboard://settings")!
+    /// Full Access is off. A keyboard extension cannot open Settings — it
+    /// has no UIApplication — so it hands off to the app, which can, and
+    /// which lands on HopBoard's own page where the Keyboards row lives.
+    static let fullAccessURL = URL(string: "hopboard://fullaccess")!
 
     // Darwin notification names are a global namespace — prefix everything.
     static let commandNotification = "io.zhoulab.hopboard.command"

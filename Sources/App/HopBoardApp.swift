@@ -18,6 +18,14 @@ struct HopBoardApp: App {
                     if url.host == "settings" {
                         session.showSettings = true
                     }
+                    // hopboard://fullaccess — the keyboard cannot open
+                    // Settings itself, so it sends us. This lands on
+                    // HopBoard's own page, which carries the Keyboards row
+                    // and the Allow Full Access switch inside it.
+                    if url.host == "fullaccess",
+                       let settings = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(settings)
+                    }
                 }
                 .task {
                     // Dev hooks for driving the sim without UI taps

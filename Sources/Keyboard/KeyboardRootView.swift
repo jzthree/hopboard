@@ -21,6 +21,7 @@ struct KeyboardRootView: View {
             .onAppear {
                 model.openApp = { openURL(Flow.startSessionURL) }
                 model.openSettings = { openURL(Flow.settingsURL) }
+                model.openFullAccess = { openURL(Flow.fullAccessURL) }
             }
     }
 }
@@ -36,13 +37,11 @@ struct TypePad: UIViewRepresentable {
     func makeUIView(context: Context) -> KeyPlaneView {
         let plane = KeyPlaneView(frame: .zero)
         plane.delegate = context.coordinator
-        plane.showsGlobe = model.showsGlobe
         plane.seedContext(model.documentTail)
         return plane
     }
 
     func updateUIView(_ plane: KeyPlaneView, context: Context) {
-        plane.showsGlobe = model.showsGlobe
         plane.status = model.stripStatus
         plane.chips = model.stripChips
     }
@@ -66,9 +65,6 @@ struct TypePad: UIViewRepresentable {
         }
         func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String) {
             model.replaceLast(count, with: text)
-        }
-        func keyPlaneGlobeButton(_ plane: KeyPlaneView) -> UIView? {
-            model.makeGlobeButton()
         }
     }
 }

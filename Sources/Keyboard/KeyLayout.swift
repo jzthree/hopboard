@@ -12,10 +12,6 @@ enum KeyAction: Equatable {
     case newline
     /// Start or stop dictating, without leaving the keys.
     case dictation
-    /// The input-mode switch. iOS REQUIRES one whenever the system says
-    /// so, and now that the keys are the only view, this is the only place
-    /// it can live — without it there is no way off this keyboard.
-    case globe
 }
 
 enum KeyLayer: String, Equatable {
@@ -96,7 +92,7 @@ enum KeyLayout {
         "%": ["‰"],
     ]
 
-    static func rows(for layer: KeyLayer, showsGlobe: Bool = false) -> [KeyRow] {
+    static func rows(for layer: KeyLayer) -> [KeyRow] {
         switch layer {
         case .letters:
             return [
@@ -106,7 +102,7 @@ enum KeyLayout {
                 KeyRow(keys: [.control(.shift, symbolName: "shift", width: 1.4)]
                        + "zxcvbnm".map { KeyCap.letter(String($0)) }
                        + [.control(.backspace, symbolName: "delete.left", width: 1.4)]),
-                bottomRow(switchLabel: "123", switchTo: .numbers, showsGlobe: showsGlobe),
+                bottomRow(switchLabel: "123", switchTo: .numbers),
             ]
         case .numbers:
             return [
@@ -117,7 +113,7 @@ enum KeyLayout {
                        + [".", ",", "?", "!", "'"].map { KeyCap.letter($0) }
                        + [.control(.backspace, symbolName: "delete.left", width: 1.4)],
                        leadingPad: 0, trailingPad: 0),
-                bottomRow(switchLabel: "ABC", switchTo: .letters, showsGlobe: showsGlobe),
+                bottomRow(switchLabel: "ABC", switchTo: .letters),
             ]
         case .symbols:
             return [
@@ -128,26 +124,23 @@ enum KeyLayout {
                 KeyRow(keys: [.control(.layer(.numbers), label: "123", width: 1.4)]
                        + [".", ",", "?", "!", "'"].map { KeyCap.letter($0) }
                        + [.control(.backspace, symbolName: "delete.left", width: 1.4)]),
-                bottomRow(switchLabel: "ABC", switchTo: .letters, showsGlobe: showsGlobe),
+                bottomRow(switchLabel: "ABC", switchTo: .letters),
             ]
         }
     }
 
-    private static func bottomRow(switchLabel: String, switchTo: KeyLayer,
-                                  showsGlobe: Bool) -> KeyRow {
-        // Space is the key you hit most and aim at least, so it takes the
-        // lion's share — about half the row, as the system keyboard gives
-        // it. Adding the globe paid for itself out of space, which made
-        // the one key that should be hardest to miss the one that shrank.
-        // The other four give the width up instead.
-        var keys: [KeyCap] = [.control(.layer(switchTo), label: switchLabel,
-                                       width: showsGlobe ? 1.15 : 1.2)]
-        if showsGlobe { keys.append(.control(.globe, symbolName: "globe", width: 1.0)) }
-        keys.append(.control(.dictation, symbolName: "mic.fill",
-                             width: showsGlobe ? 1.15 : 1.2))
-        keys.append(KeyCap(action: .space, width: showsGlobe ? 4.2 : 4.8, label: "space"))
-        keys.append(.control(.newline, label: "return", width: showsGlobe ? 1.7 : 1.8))
-        return KeyRow(keys: keys)
+    private static func bottomRow(switchLabel: String, switchTo: KeyLayer) -> KeyRow {
+        // No input-mode switch key: Jian's call, and the width goes to
+        // space, which is hit most and aimed at least. Worth knowing what
+        // it costs — with more than one keyboard installed iOS expects the
+        // globe, there is no other way to leave this keyboard from inside
+        // it, and App Review looks for it.
+        KeyRow(keys: [
+            .control(.layer(switchTo), label: switchLabel, width: 1.2),
+            .control(.dictation, symbolName: "mic.fill", width: 1.2),
+            KeyCap(action: .space, width: 4.8, label: "space"),
+            .control(.newline, label: "return", width: 1.8),
+        ])
     }
 }
 

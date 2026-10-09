@@ -39,7 +39,7 @@ final class KeyboardModel: ObservableObject {
     /// things the keyboard cannot fix by itself.
     var stripStatus: DictationStatus {
         guard ipcAvailable else {
-            return DictationStatus(phase: .message("Turn on Full Access for HopBoard"))
+            return DictationStatus(phase: .message("Tap to turn on Full Access"))
         }
         switch state {
         case .recording:
@@ -98,8 +98,7 @@ final class KeyboardModel: ObservableObject {
     /// SwiftUI's openURL action is handed in from the view layer.
     var openSettings: (() -> Void)?
     var openApp: (() -> Void)?
-
-    func makeGlobeButton() -> UIView? { controller?.makeGlobeButton() }
+    var openFullAccess: (() -> Void)?
 
     /// The strip's main action, whatever it currently reads as.
     func stripPrimary() {
@@ -108,7 +107,10 @@ final class KeyboardModel: ObservableObject {
         case .noSession: openApp?()
         case .loading: openApp?()
         default:
-            guard ipcAvailable else { openApp?(); return }
+            // The strip is telling you Full Access is off; tapping it
+            // should go and turn it on, not just open the app and leave
+            // you to find the setting.
+            guard ipcAvailable else { openFullAccess?(); return }
             insertPending()
         }
     }

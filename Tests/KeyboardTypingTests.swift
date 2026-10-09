@@ -416,45 +416,6 @@ final class CorrectionConfidenceTests: XCTestCase {
     }
 }
 
-final class GlobeKeyTests: XCTestCase {
-    /// iOS requires the input-mode switch whenever it says so, and the
-    /// keys are now the only view — without it there is no way off this
-    /// keyboard at all.
-    func testGlobeAppearsOnlyWhenAskedFor() {
-        for layer in [KeyLayer.letters, .numbers, .symbols] {
-            let without = KeyLayout.rows(for: layer).flatMap { $0.keys.map(\.action) }
-            XCTAssertFalse(without.contains(.globe))
-            let with = KeyLayout.rows(for: layer, showsGlobe: true)
-                .flatMap { $0.keys.map(\.action) }
-            XCTAssertTrue(with.contains(.globe), "\(layer) lost the switch key")
-            // And it must not have cost us anything else.
-            for required in [KeyAction.space, .newline, .backspace, .dictation] {
-                XCTAssertTrue(with.contains(required), "\(layer) lost \(required)")
-            }
-        }
-    }
-
-    /// The flag is a parameter, not remembered state: asking without it
-    /// after asking with it must not still hand back a globe.
-    func testAskingIsStateless() {
-        _ = KeyLayout.rows(for: .letters, showsGlobe: true)
-        let plain = KeyLayout.rows(for: .letters).flatMap { $0.keys.map(\.action) }
-        XCTAssertFalse(plain.contains(.globe))
-    }
-
-    func testTheGlobeRowStillFillsTheWidthWithoutOverlap() {
-        let metrics = KeyboardMetrics.forWidth(393, idiom: .phone)
-        let grid = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters, showsGlobe: true),
-                                      in: CGSize(width: 393, height: 258), metrics: metrics)
-        let bottom = grid[3]
-        XCTAssertEqual(bottom.count, 5)
-        for (a, b) in zip(bottom, bottom.dropFirst()) {
-            XCTAssertGreaterThanOrEqual(b.minX, a.maxX - 0.01)
-        }
-        XCTAssertEqual(bottom.last!.maxX, 393 - metrics.sideInset, accuracy: 0.01)
-    }
-}
-
 /// The keys were eleven points tall on build 85, because the height
 /// constraint kept the value it was born with after the call that
 /// overrode it was deleted. Geometry alone could not catch that — the
@@ -475,8 +436,7 @@ final class KeyHeightTests: XCTestCase {
             let metrics = KeyboardMetrics.forScreen(width: width, height: height,
                                                     idiom: idiom)
             let size = CGSize(width: width, height: metrics.typingHeight)
-            let grid = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters,
-                                                               showsGlobe: true),
+            let grid = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
                                           in: size, metrics: metrics)
             let keyHeight = grid[0][0].height
             // Apple's own guidance is 44pt; a keyboard packs tighter than
@@ -490,39 +450,30 @@ final class KeyHeightTests: XCTestCase {
 }
 
 final class SpaceBarTests: XCTestCase {
-    private func bottomRow(globe: Bool) -> [CGRect] {
-        let metrics = KeyboardMetrics.forWidth(393, idiom: .phone)
-        return KeyGeometry.frames(rows: KeyLayout.rows(for: .letters, showsGlobe: globe),
-                                  in: CGSize(width: 393, height: 258),
-                                  metrics: metrics)[3]
-    }
-
-    /// Space is hit most and aimed at least. Adding the globe took its
-    /// width out of space, shrinking the one key that should be hardest
-    /// to miss; the other four pay for it now.
+    /// Space is hit most and aimed at least, so it takes about half the
+    /// bottom row — the share the system keyboard gives it, and the share
+    /// it got back when the globe was removed.
     func testSpaceOwnsAboutHalfTheBottomRow() {
-        for globe in [false, true] {
-            let row = bottomRow(globe: globe)
-            let space = globe ? row[3] : row[2]
-            let total = row.last!.maxX - row.first!.minX
-            let share = space.width / total
-            XCTAssertGreaterThan(share, 0.40,
-                                 "space is only \(Int(share * 100))% with globe=\(globe)")
-            XCTAssertLessThan(share, 0.60)
+        let metrics = KeyboardMetrics.forWidth(393, idiom: .phone)
+        let row = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
+                                     in: CGSize(width: 393, height: 258),
+                                     metrics: metrics)[3]
+        XCTAssertEqual(row.count, 4)
+        let share = row[2].width / (row.last!.maxX - row.first!.minX)
+        XCTAssertGreaterThan(share, 0.45, "space is only \(Int(share * 100))%")
+        XCTAssertLessThan(share, 0.62)
+        for key in row {
+            XCTAssertGreaterThanOrEqual(key.width, 34,
+                                        "a bottom-row key is only \(key.width)pt")
         }
-        // And the globe must not have cost space more than it had to.
-        let withGlobe = bottomRow(globe: true)[3].width
-        let without = bottomRow(globe: false)[2].width
-        XCTAssertGreaterThan(withGlobe, without * 0.82,
-                             "the globe ate too much of the space bar")
     }
 
-    func testEveryBottomRowKeyStaysHittable() {
-        for globe in [false, true] {
-            for key in bottomRow(globe: globe) {
-                XCTAssertGreaterThanOrEqual(key.width, 34,
-                                            "a bottom-row key is only \(key.width)pt wide")
-            }
+    /// No input-mode switch key, by decision. If one ever comes back it
+    /// must not come back out of the space bar.
+    func testNoGlobeInTheLayout() {
+        for layer in [KeyLayer.letters, .numbers, .symbols] {
+            let labels = KeyLayout.rows(for: layer).flatMap { $0.keys.compactMap(\.symbolName) }
+            XCTAssertFalse(labels.contains("globe"))
         }
     }
 }

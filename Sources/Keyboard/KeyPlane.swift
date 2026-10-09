@@ -13,10 +13,6 @@ protocol KeyPlaneDelegate: AnyObject {
     /// discard-or-transcribe-again.
     func keyPlaneStripPrimary(_ plane: KeyPlaneView)
     func keyPlaneStripSecondary(_ plane: KeyPlaneView)
-    /// The globe needs UIKit's own handler to offer the keyboard picker on
-    /// a long press, so the plane hands the touch back rather than
-    /// synthesising one.
-    func keyPlaneGlobeButton(_ plane: KeyPlaneView) -> UIView?
     func keyPlaneDidPickChip(_ plane: KeyPlaneView, at index: Int)
     /// Swap the word just typed for its correction: delete that many
     /// characters, then insert.
@@ -55,16 +51,7 @@ final class KeyPlaneView: UIView {
     var topInset: CGFloat { metrics.topInset }
 
     private var keyLayer: KeyLayer = .letters
-    /// iOS decides whether this keyboard must offer the switch key.
-    var showsGlobe = false {
-        didSet {
-            guard showsGlobe != oldValue else { return }
-            rows = KeyLayout.rows(for: keyLayer, showsGlobe: showsGlobe)
-            rebuildKeys()
-        }
-    }
     private var rows: [KeyRow] = KeyLayout.rows(for: .letters)
-    private var globeButton: UIView?
     private var keyViews: [[KeyView]] = []
     private var frames: [[CGRect]] = []
 
@@ -247,17 +234,12 @@ final class KeyPlaneView: UIView {
             for (colIndex, view) in row.enumerated() {
                 guard rowIndex < frames.count, colIndex < frames[rowIndex].count else { continue }
                 view.frame = frames[rowIndex][colIndex]
-                if rows[rowIndex].keys[colIndex].action == .globe {
-                    globeButton?.frame = view.frame
-                }
             }
         }
     }
 
     private func rebuildKeys() {
         keyViews.flatMap { $0 }.forEach { $0.removeFromSuperview() }
-        globeButton?.removeFromSuperview()
-        globeButton = nil
         keyViews = rows.map { row in
             row.keys.map { cap in
                 let view = KeyView(cap: cap)
@@ -266,13 +248,6 @@ final class KeyPlaneView: UIView {
             }
         }
         refreshTitles()
-        // UIKit's own control, laid over the drawn cap: handleInputModeList
-        // is what gives a long press the keyboard picker, and nothing we
-        // synthesise here can stand in for it.
-        if showsGlobe, let button = delegate?.keyPlaneGlobeButton(self) {
-            addSubview(button)
-            globeButton = button
-        }
         setNeedsLayout()
     }
 
@@ -300,7 +275,7 @@ final class KeyPlaneView: UIView {
         for (_, other) in touching { other.longPress?.invalidate() }
         touching.removeAll()
         keyLayer = layer
-        rows = KeyLayout.rows(for: layer, showsGlobe: showsGlobe)
+        rows = KeyLayout.rows(for: layer)
         if layer != .letters { isCapsLocked = false }
         rebuildKeys()
     }
@@ -419,8 +394,6 @@ final class KeyPlaneView: UIView {
             applyAutoShift()
         case .dictation:
             delegate?.keyPlaneDidTapDictation(self)
-        case .globe:
-            break   // the overlaid UIKit button owns this touch
         }
     }
 

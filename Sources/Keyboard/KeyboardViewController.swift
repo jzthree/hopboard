@@ -93,18 +93,6 @@ final class KeyboardViewController: UIInputViewController {
 
     var keyboardHasFullAccess: Bool { hasFullAccess }
 
-    /// UIKit's own switch key. handleInputModeList is what gives a long
-    /// press the keyboard picker; nothing synthesised stands in for it.
-    /// Transparent — the drawn cap belongs to the key beneath it.
-    func makeGlobeButton() -> UIView {
-        let button = UIButton(type: .system)
-        button.backgroundColor = .clear
-        button.addTarget(self,
-                         action: #selector(UIInputViewController.handleInputModeList(from:with:)),
-                         for: .allTouchEvents)
-        return button
-    }
-
     /// The height the current device and orientation want. Only the
     /// controller knows how wide it has been made, and width is the only
     /// signal an extension gets about which way the phone is held.
