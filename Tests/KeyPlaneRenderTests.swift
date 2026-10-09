@@ -62,3 +62,38 @@ final class KeyPlaneRenderTests: XCTestCase {
 
 
 }
+
+/// "The touch zone of all buttons should seamlessly cover the entire
+/// keyboard space regardless of the visual size of the key." (Jian)
+/// Geometry already resolves every point to a nearest key — but only for
+/// touches that REACH the plane. A key view that accepts touches of its
+/// own would quietly take them out of that scheme, and the gaps around it
+/// with them.
+@MainActor
+final class TouchCoverageTests: XCTestCase {
+    func testNoKeyViewEverSwallowsATouch() {
+        let plane = KeyPlaneView(frame: CGRect(x: 0, y: 0, width: 393, height: 258))
+        plane.seedContext("")
+        plane.layoutIfNeeded()
+
+        let keys = plane.subviews.compactMap { $0 as? KeyView }
+        XCTAssertFalse(keys.isEmpty)
+        for key in keys {
+            XCTAssertFalse(key.isUserInteractionEnabled,
+                           "a key view can take a touch the plane never sees")
+        }
+
+        var unowned: [CGPoint] = []
+        var stolen: [CGPoint] = []
+        for x in stride(from: CGFloat(0), through: plane.bounds.width, by: 4) {
+            for y in stride(from: CGFloat(0), through: plane.bounds.height, by: 4) {
+                let point = CGPoint(x: x, y: y)
+                let hit = plane.hitTest(point, with: nil)
+                if hit == nil { unowned.append(point) }
+                if hit is KeyView { stolen.append(point) }
+            }
+        }
+        XCTAssertTrue(unowned.isEmpty, "\(unowned.count) points belong to nothing")
+        XCTAssertTrue(stolen.isEmpty, "\(stolen.count) points go to a key view")
+    }
+}

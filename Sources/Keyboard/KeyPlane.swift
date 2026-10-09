@@ -282,6 +282,19 @@ final class KeyPlaneView: UIView {
 
     // MARK: touches
 
+    /// Every point in the keyboard belongs to something, and the default
+    /// is the keys. Only a VISIBLE strip above them may take a touch;
+    /// everything else — gaps, margins, the bubble headroom, the band
+    /// under the bottom row — resolves to the nearest key. There is no
+    /// such thing here as a tap that lands on nothing.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard bounds.contains(point) else { return nil }
+        for tenant in [chipsView, strip, candidates] as [UIView] where !tenant.isHidden {
+            if tenant.frame.contains(point) { return tenant }
+        }
+        return self
+    }
+
     private func keyIndex(at point: CGPoint) -> (row: Int, col: Int)? {
         KeyGeometry.index(at: CGPoint(x: point.x, y: point.y - metrics.touchRise),
                           in: frames)

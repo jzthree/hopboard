@@ -37,6 +37,11 @@ final class KeyView: UIView {
         layer.shadowOffset = CGSize(width: 0, height: 1)
         backgroundColor = cap.isControl ? KeyPalette.control : KeyPalette.letter
 
+        // The key draws; it does not receive. Every touch belongs to the
+        // plane, which is the only thing that knows which key is NEAREST —
+        // and nearest is the whole point, since the gaps have to belong to
+        // somebody.
+        isUserInteractionEnabled = false
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.6

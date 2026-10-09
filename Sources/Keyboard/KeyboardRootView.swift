@@ -16,13 +16,12 @@ struct KeyboardRootView: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        TypePad(model: model)
+        TypePad(model: model, openURL: openURL)
             .tint(FlowBrand.accent)
-            .onAppear {
-                model.openApp = { openURL(Flow.startSessionURL) }
-                model.openSettings = { openURL(Flow.settingsURL) }
-                model.openFullAccess = { openURL(Flow.fullAccessURL) }
-            }
+            // The keyboard owns the whole input view, home indicator strip
+            // included. A safe-area inset here is a band of keyboard that
+            // belongs to nothing.
+            .ignoresSafeArea()
     }
 }
 
@@ -31,19 +30,35 @@ struct KeyboardRootView: View {
 /// KeyPlaneView.
 struct TypePad: UIViewRepresentable {
     let model: KeyboardModel
+    /// Opening the app is the only thing the keyboard genuinely cannot do
+    /// alone — iOS 18 closed every selector route to UIApplication, so
+    /// SwiftUI's action has to be carried in. It is wired on EVERY update,
+    /// not once in onAppear: when it was set there and onAppear had not
+    /// run, the mic key with no session called a nil closure and did
+    /// nothing at all. A dead button is the one failure this keyboard is
+    /// not allowed to have.
+    let openURL: OpenURLAction
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
     func makeUIView(context: Context) -> KeyPlaneView {
         let plane = KeyPlaneView(frame: .zero)
         plane.delegate = context.coordinator
+        wireActions()
         plane.seedContext(model.documentTail)
         return plane
     }
 
     func updateUIView(_ plane: KeyPlaneView, context: Context) {
+        wireActions()
         plane.status = model.stripStatus
         plane.chips = model.stripChips
+    }
+
+    private func wireActions() {
+        model.openApp = { openURL(Flow.startSessionURL) }
+        model.openSettings = { openURL(Flow.settingsURL) }
+        model.openFullAccess = { openURL(Flow.fullAccessURL) }
     }
 
     @MainActor
