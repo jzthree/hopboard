@@ -416,3 +416,42 @@ final class CorrectionConfidenceTests: XCTestCase {
         }
     }
 }
+
+final class GlobeKeyTests: XCTestCase {
+    /// iOS requires the input-mode switch whenever it says so, and the
+    /// keys are now the only view — without it there is no way off this
+    /// keyboard at all.
+    func testGlobeAppearsOnlyWhenAskedFor() {
+        for layer in [KeyLayer.letters, .numbers, .symbols] {
+            let without = KeyLayout.rows(for: layer).flatMap { $0.keys.map(\.action) }
+            XCTAssertFalse(without.contains(.globe))
+            let with = KeyLayout.rows(for: layer, showsGlobe: true)
+                .flatMap { $0.keys.map(\.action) }
+            XCTAssertTrue(with.contains(.globe), "\(layer) lost the switch key")
+            // And it must not have cost us anything else.
+            for required in [KeyAction.space, .newline, .backspace, .dictation] {
+                XCTAssertTrue(with.contains(required), "\(layer) lost \(required)")
+            }
+        }
+    }
+
+    /// The flag is a parameter, not remembered state: asking without it
+    /// after asking with it must not still hand back a globe.
+    func testAskingIsStateless() {
+        _ = KeyLayout.rows(for: .letters, showsGlobe: true)
+        let plain = KeyLayout.rows(for: .letters).flatMap { $0.keys.map(\.action) }
+        XCTAssertFalse(plain.contains(.globe))
+    }
+
+    func testTheGlobeRowStillFillsTheWidthWithoutOverlap() {
+        let metrics = KeyboardMetrics.forWidth(393, idiom: .phone)
+        let grid = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters, showsGlobe: true),
+                                      in: CGSize(width: 393, height: 258), metrics: metrics)
+        let bottom = grid[3]
+        XCTAssertEqual(bottom.count, 5)
+        for (a, b) in zip(bottom, bottom.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(b.minX, a.maxX - 0.01)
+        }
+        XCTAssertEqual(bottom.last!.maxX, 393 - metrics.sideInset, accuracy: 0.01)
+    }
+}

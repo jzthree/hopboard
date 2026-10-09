@@ -24,7 +24,6 @@ final class KeyboardModel: ObservableObject {
     /// keyboard so a dictation that landed nowhere (focus lost, keyboard
     /// dismissed mid-transcribe) is recoverable with a preview.
     @Published private(set) var historyItems: [FlowResult] = []
-    @Published var showingHistory = false
     /// A finished dictation that could NOT be auto-inserted (keyboard was
     /// away, wait timed out, or it came from the app). Lingers as an
     /// "Insert" pill until tapped or superseded — never silently eaten.
@@ -35,39 +34,13 @@ final class KeyboardModel: ObservableObject {
     /// keyboard that dumps you back on the dictation row every time it
     /// reappears cannot be anyone's default. It stopped being a temporary
     /// correction pad when it grew autocorrect.
-    @Published private(set) var typingMode = KeyboardModel.initialTypingMode()
-    private static let typingModeKey = "kb.typingMode"
-    private static let homeMigratedKey = "kb.keyboardIsHome"
-
-    /// THE KEYS ARE HOME. Not the dictation row — that is where you go to
-    /// say something, and you come straight back.
-    ///
-    /// This was wrong in the most boring way possible: the stored value is
-    /// read with UserDefaults.bool, which answers false for a key that was
-    /// never set, so an unset preference meant "open on the dictation
-    /// row". Every bit of the tap-once-to-dictate work was unreachable
-    /// behind it, because you had to find the abc key first.
-    ///
-    /// A stored false is also not evidence of a preference: under the old
-    /// design the mic key wrote exactly that, every time, just to REACH
-    /// the dictation row. So the legacy value is cleared once rather than
-    /// honoured, and only choices made from here on persist.
-    private static func initialTypingMode() -> Bool {
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: homeMigratedKey) == nil {
-            defaults.set(true, forKey: homeMigratedKey)
-            defaults.set(true, forKey: typingModeKey)
-            return true
+    /// What the strip above the keys should be saying. Everything the
+    /// dictation row used to show has to fit here now, including the two
+    /// things the keyboard cannot fix by itself.
+    var stripStatus: DictationStatus {
+        guard ipcAvailable else {
+            return DictationStatus(phase: .message("Turn on Full Access for HopBoard"))
         }
-        return defaults.bool(forKey: typingModeKey)
-    }
-    /// Whether the keys are showing. Dictation no longer takes them away:
-    /// it borrows the candidate row above them and gives it back. There is
-    /// no mode to be in, which is the whole idea.
-    var showsKeys: Bool { typingMode }
-
-    /// What the strip above the keys should be saying.
-    var dictationStatus: DictationStatus {
         switch state {
         case .recording:
             return DictationStatus(phase: .recording, startedAt: recordingStartedAt,
@@ -75,17 +48,68 @@ final class KeyboardModel: ObservableObject {
         case .transcribing:
             return DictationStatus(phase: .transcribing, startedAt: transcribingStartedAt,
                                    canRetranscribe: canRetranscribe)
+        case .loading(let status):
+            return DictationStatus(phase: .message(status.isEmpty ? "Preparing model…" : status))
+        case .noSession:
+            return DictationStatus(phase: .message("Tap to start a HopBoard session"))
         default:
             guard pendingResult != nil else { return DictationStatus() }
             return DictationStatus(phase: .pending, canRetranscribe: canRetranscribe)
         }
     }
 
+    /// The controls the dictation row used to carry as chips. Opened by
+    /// holding the mic key; picking one closes them again.
+    @Published private(set) var chipsOpen = false
+
+    var stripChips: [StripChipsView.Chip] {
+        guard chipsOpen else { return [] }
+        var chips: [StripChipsView.Chip] = [
+            .init(title: languageLabel, symbol: nil),
+            .init(title: tone.shortLabel, symbol: nil),
+        ]
+        if canRetranscribe { chips.append(.init(title: "Again", symbol: nil)) }
+        chips.append(.init(title: "End", symbol: nil))
+        chips.append(.init(title: "Settings", symbol: nil))
+        return chips
+    }
+
+    func toggleChips() { chipsOpen.toggle() }
+
+    func pickChip(at index: Int) {
+        let chips = stripChips
+        guard chips.indices.contains(index) else { return }
+        switch chips[index].title {
+        case languageLabel: cycleLanguage()
+        case "Again": retranscribeLast()
+        case "End": endSessionTapped()
+        case "Settings":
+            chipsOpen = false
+            openSettings?()
+        default: cycleTone()
+        }
+        if chips[index].title == "Again" || chips[index].title == "End" {
+            chipsOpen = false
+        }
+    }
+
+    /// Opening the app is the one thing a keyboard extension cannot do for
+    /// itself — iOS 18 killed every selector route to UIApplication, so
+    /// SwiftUI's openURL action is handed in from the view layer.
+    var openSettings: (() -> Void)?
+    var openApp: (() -> Void)?
+
+    func makeGlobeButton() -> UIView? { controller?.makeGlobeButton() }
+
     /// The strip's main action, whatever it currently reads as.
     func stripPrimary() {
         switch state {
         case .recording: micTapped()
-        default: insertPending()
+        case .noSession: openApp?()
+        case .loading: openApp?()
+        default:
+            guard ipcAvailable else { openApp?(); return }
+            insertPending()
         }
     }
 
@@ -178,7 +202,6 @@ final class KeyboardModel: ObservableObject {
     func becameVisible(showsGlobe: Bool) {
         isVisible = true
         self.showsGlobe = showsGlobe
-        controller?.applyHeight(typing: typingMode)
         // NO keychain traffic on the launch path: the keyboard service's
         // watchdog kills slow cold starts (worst right after an app update,
         // when everything is uncached) and iOS then skips to the next
@@ -212,12 +235,12 @@ final class KeyboardModel: ObservableObject {
         pollTimer?.invalidate()
         pollTimer = nil
         defer { lastPollWanted = pollTimer != nil }
-        // Dictation still needs the backstop even while the keys are up —
-        // that is the one time something is happening that no keystroke
-        // will tell us about.
+        // The keys are always up now, so the poll follows the WORK: a
+        // dictation in flight is the one thing happening that no keystroke
+        // will report. Typing alone needs no keychain traffic at all.
         let dictating = state == .recording || state == .transcribing
             || pendingResult != nil
-        guard isVisible, !showsKeys || dictating else { return }
+        guard isVisible, dictating else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -227,7 +250,6 @@ final class KeyboardModel: ObservableObject {
         isVisible = false
         pollTimer?.invalidate()
         pollTimer = nil
-        showingHistory = false
         // A recording in progress is ENDED, not thrown away. The keyboard
         // goes away for reasons that have nothing to do with wanting the
         // dictation gone — above all the screen locking mid-sentence, which
@@ -295,17 +317,17 @@ final class KeyboardModel: ObservableObject {
     /// The mic key on the keyboard. Switching to a dictation screen and
     /// then pressing record is two taps to say one thing, and the first one
     /// carries no meaning the second does not — so when there is a session
-    /// to speak into, this IS the record button. The keys come back on
-    /// their own once the words land.
+    /// to speak into, this IS the record button, and nothing leaves the
+    /// screen while you use it.
     ///
-    /// Without a live session it stays a mode change, because the dictation
-    /// row is the only place Start Session exists.
+    /// With no session there is nowhere for the words to go, so the tap
+    /// opens the app instead — the strip above has already been saying so.
     func dictationKeyTapped() {
-        // The poll has been asleep while you typed, so the cached state may
-        // be old. Read it once, here, where the answer matters.
+        // The poll sleeps while you type, so the cached state may be old.
+        // Read it once, here, where the answer decides something.
         refresh()
-        guard store.sessionAlive, state == .ready else {
-            setTyping(false)
+        guard store.sessionAlive, state == .ready || state == .recording else {
+            openApp?()
             return
         }
         micTapped()
@@ -351,7 +373,6 @@ final class KeyboardModel: ObservableObject {
     /// Insert a history item at the cursor (tapped from the preview strip).
     func insert(_ result: FlowResult) {
         guard insertProbe == nil else { return }
-        showingHistory = false
         // Claim it too: a history item the user just placed shouldn't then
         // reappear as an unclaimed Insert pill.
         attemptInsert(result.text, claiming: result.id == store.results.last?.id ? result.id : nil)
@@ -371,14 +392,6 @@ final class KeyboardModel: ObservableObject {
             return
         }
         controller?.insertNewline()
-    }
-
-    func setTyping(_ on: Bool) {
-        typingMode = on
-        UserDefaults.standard.set(on, forKey: Self.typingModeKey)
-        showingHistory = false
-        controller?.applyHeight(typing: on)
-        syncPollTimer()
     }
 
     /// What precedes the cursor right now, for seeding the pad's shift

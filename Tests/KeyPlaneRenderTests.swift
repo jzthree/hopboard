@@ -10,11 +10,13 @@ import UIKit
 @MainActor
 final class KeyPlaneRenderTests: XCTestCase {
     private func makePlane(width: CGFloat = 393,
-                           metrics: KeyboardMetrics? = nil) -> KeyPlaneView {
+                           metrics: KeyboardMetrics? = nil,
+                           globe: Bool = false) -> KeyPlaneView {
         let m = metrics ?? KeyboardMetrics.forWidth(width, idiom: .phone)
         let plane = KeyPlaneView(frame: CGRect(x: 0, y: 0, width: width,
                                                height: m.typingHeight))
         plane.metricsOverride = m
+        plane.showsGlobe = globe
         plane.seedContext("")
         plane.layoutIfNeeded()
         return plane
@@ -37,6 +39,7 @@ final class KeyPlaneRenderTests: XCTestCase {
     /// and iPad are guesses until somebody looks at them.
     func testRendersOnEveryDevice() throws {
         try render(makePlane(), named: "phone-portrait")
+        try render(makePlane(globe: true), named: "phone-portrait-globe")
         try render(makePlane(width: 852,
                              metrics: .forWidth(852, idiom: .phone)),
                    named: "phone-landscape")

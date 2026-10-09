@@ -2,7 +2,13 @@ import UIKit
 
 /// What dictation is doing, as the keyboard needs to draw it.
 struct DictationStatus: Equatable {
-    enum Phase: Equatable { case none, recording, transcribing, pending }
+    enum Phase: Equatable {
+        case none, recording, transcribing, pending
+        /// Something the keyboard cannot fix by itself — no session yet, or
+        /// Full Access off. The strip says it and the tap opens the app,
+        /// because there is no dictation screen left to say it on.
+        case message(String)
+    }
     var phase: Phase = .none
     var startedAt: Date?
     var level: Float = 0
@@ -83,6 +89,10 @@ final class DictationStripView: UIView {
             title.text = "Transcribing \(elapsed)…"
             title.textColor = .secondaryLabel
             secondary.isHidden = true
+        case .message(let text):
+            title.text = text
+            title.textColor = .secondaryLabel
+            secondary.isHidden = true
         case .pending:
             title.text = "Tap to insert"
             title.textColor = .label
@@ -126,5 +136,66 @@ final class DictationStripView: UIView {
         } else {
             onPrimary?()
         }
+    }
+}
+
+/// The strip's other job: the handful of controls that used to live as
+/// chips on a dictation row that no longer exists. Held open by the mic
+/// key, closed by picking something.
+final class StripChipsView: UIView {
+    struct Chip: Equatable {
+        let title: String
+        let symbol: String?
+    }
+
+    var onPick: ((Int) -> Void)?
+    private var chips: [Chip] = []
+    private var labels: [UILabel] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+
+    func show(_ new: [Chip]) {
+        guard new != chips else { return }
+        chips = new
+        labels.forEach { $0.removeFromSuperview() }
+        labels = new.map { chip in
+            let label = UILabel()
+            label.text = chip.title
+            label.font = .systemFont(ofSize: 14, weight: .medium)
+            label.textAlignment = .center
+            label.textColor = .label
+            label.backgroundColor = UIColor.label.withAlphaComponent(0.1)
+            label.layer.cornerRadius = 11
+            label.layer.cornerCurve = .continuous
+            label.clipsToBounds = true
+            addSubview(label)
+            return label
+        }
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard !labels.isEmpty else { return }
+        let gap: CGFloat = 6
+        let total = bounds.width - 20 - gap * CGFloat(labels.count - 1)
+        let width = total / CGFloat(labels.count)
+        for (index, label) in labels.enumerated() {
+            label.frame = CGRect(x: 10 + CGFloat(index) * (width + gap),
+                                 y: (bounds.height - 24) / 2, width: width, height: 24)
+        }
+    }
+
+    /// Clamped, like everything else here: a tap in a gap picks a chip.
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first, !labels.isEmpty else { return }
+        let slot = bounds.width / CGFloat(labels.count)
+        let index = min(max(Int(touch.location(in: self).x / slot), 0), labels.count - 1)
+        onPick?(index)
     }
 }

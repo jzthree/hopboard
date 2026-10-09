@@ -13,6 +13,11 @@ protocol KeyPlaneDelegate: AnyObject {
     /// discard-or-transcribe-again.
     func keyPlaneStripPrimary(_ plane: KeyPlaneView)
     func keyPlaneStripSecondary(_ plane: KeyPlaneView)
+    /// The globe needs UIKit's own handler to offer the keyboard picker on
+    /// a long press, so the plane hands the touch back rather than
+    /// synthesising one.
+    func keyPlaneGlobeButton(_ plane: KeyPlaneView) -> UIView?
+    func keyPlaneDidPickChip(_ plane: KeyPlaneView, at index: Int)
     /// Swap the word just typed for its correction: delete that many
     /// characters, then insert.
     func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String)
@@ -50,7 +55,16 @@ final class KeyPlaneView: UIView {
     var topInset: CGFloat { metrics.topInset }
 
     private var keyLayer: KeyLayer = .letters
+    /// iOS decides whether this keyboard must offer the switch key.
+    var showsGlobe = false {
+        didSet {
+            guard showsGlobe != oldValue else { return }
+            rows = KeyLayout.rows(for: keyLayer, showsGlobe: showsGlobe)
+            rebuildKeys()
+        }
+    }
     private var rows: [KeyRow] = KeyLayout.rows(for: .letters)
+    private var globeButton: UIView?
     private var keyViews: [[KeyView]] = []
     private var frames: [[CGRect]] = []
 
@@ -85,13 +99,23 @@ final class KeyPlaneView: UIView {
     private var revertArming = false
     private let candidates = CandidateBarView()
     private let strip = DictationStripView()
+    private let chipsView = StripChipsView()
+    /// The handful of controls the dictation row used to hold. Empty means
+    /// closed; the mic key's hold opens them.
+    var chips: [StripChipsView.Chip] = [] {
+        didSet {
+            guard chips != oldValue else { return }
+            chipsView.show(chips)
+            updateStripVisibility()
+        }
+    }
     /// Dictation takes the candidate row while it is happening; the keys
     /// themselves never move.
     var status = DictationStatus() {
         didSet {
             guard status != oldValue else { return }
             strip.show(status)
-            candidates.isHidden = status.phase != .none || candidates.isEmpty
+            updateStripVisibility()
         }
     }
     /// UITextChecker's guesses() is the expensive call on this path; don't
@@ -105,6 +129,12 @@ final class KeyPlaneView: UIView {
         clipsToBounds = true
         addSubview(candidates)
         addSubview(strip)
+        addSubview(chipsView)
+        chipsView.onPick = { [weak self] index in
+            guard let self else { return }
+            KeyFeedback.tap()
+            self.delegate?.keyPlaneDidPickChip(self, at: index)
+        }
         candidates.onPick = { [weak self] suggestion in self?.pick(suggestion) }
         strip.onPrimary = { [weak self] in
             guard let self else { return }
@@ -146,8 +176,18 @@ final class KeyPlaneView: UIView {
         guard word != lastCandidateWord else { return }
         lastCandidateWord = word
         candidates.show(autocorrect.suggestions(for: word))
-        // Dictation owns the row while it has something to say.
-        if status.phase != .none { candidates.isHidden = true }
+        updateStripVisibility()
+    }
+
+    /// One row, three possible tenants, in priority order: the controls
+    /// you explicitly opened, then anything dictation has to say, then
+    /// autocomplete.
+    private func updateStripVisibility() {
+        let chipsOpen = !chips.isEmpty
+        let dictating = status.phase != .none
+        chipsView.isHidden = !chipsOpen
+        strip.isHidden = chipsOpen || !dictating
+        candidates.isHidden = chipsOpen || dictating || candidates.isEmpty
     }
 
     /// A tapped slot. The literal is a refusal, and a refusal is a lesson:
@@ -201,17 +241,23 @@ final class KeyPlaneView: UIView {
                                 height: max(topInset - 8, 0))
         candidates.frame = stripFrame
         strip.frame = stripFrame
+        chipsView.frame = stripFrame
         frames = KeyGeometry.frames(rows: rows, in: bounds.size, metrics: metrics)
         for (rowIndex, row) in keyViews.enumerated() {
             for (colIndex, view) in row.enumerated() {
                 guard rowIndex < frames.count, colIndex < frames[rowIndex].count else { continue }
                 view.frame = frames[rowIndex][colIndex]
+                if rows[rowIndex].keys[colIndex].action == .globe {
+                    globeButton?.frame = view.frame
+                }
             }
         }
     }
 
     private func rebuildKeys() {
         keyViews.flatMap { $0 }.forEach { $0.removeFromSuperview() }
+        globeButton?.removeFromSuperview()
+        globeButton = nil
         keyViews = rows.map { row in
             row.keys.map { cap in
                 let view = KeyView(cap: cap)
@@ -220,6 +266,13 @@ final class KeyPlaneView: UIView {
             }
         }
         refreshTitles()
+        // UIKit's own control, laid over the drawn cap: handleInputModeList
+        // is what gives a long press the keyboard picker, and nothing we
+        // synthesise here can stand in for it.
+        if showsGlobe, let button = delegate?.keyPlaneGlobeButton(self) {
+            addSubview(button)
+            globeButton = button
+        }
         setNeedsLayout()
     }
 
@@ -247,7 +300,7 @@ final class KeyPlaneView: UIView {
         for (_, other) in touching { other.longPress?.invalidate() }
         touching.removeAll()
         keyLayer = layer
-        rows = KeyLayout.rows(for: layer)
+        rows = KeyLayout.rows(for: layer, showsGlobe: showsGlobe)
         if layer != .letters { isCapsLocked = false }
         rebuildKeys()
     }
@@ -366,6 +419,8 @@ final class KeyPlaneView: UIView {
             applyAutoShift()
         case .dictation:
             delegate?.keyPlaneDidTapDictation(self)
+        case .globe:
+            break   // the overlaid UIKit button owns this touch
         }
     }
 

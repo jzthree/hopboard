@@ -10,8 +10,12 @@ enum KeyAction: Equatable {
     case layer(KeyLayer)
     case space
     case newline
-    /// Back to the mic: this pad is a detour from dictation, not a home.
+    /// Start or stop dictating, without leaving the keys.
     case dictation
+    /// The input-mode switch. iOS REQUIRES one whenever the system says
+    /// so, and now that the keys are the only view, this is the only place
+    /// it can live — without it there is no way off this keyboard.
+    case globe
 }
 
 enum KeyLayer: String, Equatable {
@@ -92,7 +96,7 @@ enum KeyLayout {
         "%": ["‰"],
     ]
 
-    static func rows(for layer: KeyLayer) -> [KeyRow] {
+    static func rows(for layer: KeyLayer, showsGlobe: Bool = false) -> [KeyRow] {
         switch layer {
         case .letters:
             return [
@@ -102,7 +106,7 @@ enum KeyLayout {
                 KeyRow(keys: [.control(.shift, symbolName: "shift", width: 1.4)]
                        + "zxcvbnm".map { KeyCap.letter(String($0)) }
                        + [.control(.backspace, symbolName: "delete.left", width: 1.4)]),
-                bottomRow(switchLabel: "123", switchTo: .numbers),
+                bottomRow(switchLabel: "123", switchTo: .numbers, showsGlobe: showsGlobe),
             ]
         case .numbers:
             return [
@@ -113,7 +117,7 @@ enum KeyLayout {
                        + [".", ",", "?", "!", "'"].map { KeyCap.letter($0) }
                        + [.control(.backspace, symbolName: "delete.left", width: 1.4)],
                        leadingPad: 0, trailingPad: 0),
-                bottomRow(switchLabel: "ABC", switchTo: .letters),
+                bottomRow(switchLabel: "ABC", switchTo: .letters, showsGlobe: showsGlobe),
             ]
         case .symbols:
             return [
@@ -124,18 +128,19 @@ enum KeyLayout {
                 KeyRow(keys: [.control(.layer(.numbers), label: "123", width: 1.4)]
                        + [".", ",", "?", "!", "'"].map { KeyCap.letter($0) }
                        + [.control(.backspace, symbolName: "delete.left", width: 1.4)]),
-                bottomRow(switchLabel: "ABC", switchTo: .letters),
+                bottomRow(switchLabel: "ABC", switchTo: .letters, showsGlobe: showsGlobe),
             ]
         }
     }
 
-    private static func bottomRow(switchLabel: String, switchTo: KeyLayer) -> KeyRow {
-        KeyRow(keys: [
-            .control(.layer(switchTo), label: switchLabel, width: 1.3),
-            .control(.dictation, symbolName: "mic.fill", width: 1.3),
-            KeyCap(action: .space, width: 4.4, label: "space"),
-            .control(.newline, label: "return", width: 2.0),
-        ])
+    private static func bottomRow(switchLabel: String, switchTo: KeyLayer,
+                                  showsGlobe: Bool) -> KeyRow {
+        var keys: [KeyCap] = [.control(.layer(switchTo), label: switchLabel, width: 1.3)]
+        if showsGlobe { keys.append(.control(.globe, symbolName: "globe", width: 1.2)) }
+        keys.append(.control(.dictation, symbolName: "mic.fill", width: 1.3))
+        keys.append(KeyCap(action: .space, width: showsGlobe ? 3.4 : 4.4, label: "space"))
+        keys.append(.control(.newline, label: "return", width: 2.0))
+        return KeyRow(keys: keys)
     }
 }
 
