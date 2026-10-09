@@ -39,7 +39,16 @@ final class KeyboardModel: ObservableObject {
     /// things the keyboard cannot fix by itself.
     var stripStatus: DictationStatus {
         guard ipcAvailable else {
-            return DictationStatus(phase: .message("Tap to turn on Full Access"))
+            // Two very different failures wore the same label. If iOS says
+            // Full Access is already granted, telling someone to go and
+            // grant it is worse than useless — they have, and the real
+            // fault is the app link itself.
+            guard controller?.keyboardHasFullAccess == true else {
+                return DictationStatus(phase: .message("Tap to turn on Full Access"))
+            }
+            return DictationStatus(
+                phase: .message("Full Access is on but the app is unreachable — "
+                                + store.probeDiagnosis))
         }
         switch state {
         case .recording:
@@ -213,6 +222,7 @@ final class KeyboardModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.ipcAvailable = self.store.isAvailable
+            self.syncPollTimer()
             if self.ipcAvailable {
                 self.store.keyboardSeen = true
                 // Stamp which binary is actually running. Written only on a
@@ -243,7 +253,14 @@ final class KeyboardModel: ObservableObject {
         // will report. Typing alone needs no keychain traffic at all.
         let dictating = state == .recording || state == .transcribing
             || pendingResult != nil
-        guard isVisible, dictating else { return }
+        // And while IPC is DOWN. The probe can fail for a moment at launch
+        // — the extension is still being granted Full Access, the device
+        // was locked a beat ago — and refresh is the only thing that ever
+        // retries it. With the poll asleep and no Darwin notification
+        // coming (the app cannot send one to a keyboard it cannot reach),
+        // one unlucky first probe used to mean the keyboard sat on "turn
+        // on Full Access" forever, with nothing able to change its mind.
+        guard isVisible, dictating || !ipcAvailable else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -424,7 +441,11 @@ final class KeyboardModel: ObservableObject {
         guard controller != nil else { return }
         if !ipcAvailable {
             ipcAvailable = store.isAvailable
-            if ipcAvailable { store.keyboardSeen = true }
+            if ipcAvailable {
+                store.keyboardSeen = true
+                // Recovered: the retry poll has done its job and can stop.
+                syncPollTimer()
+            }
         }
         guard ipcAvailable else {
             state = .needsFullAccess

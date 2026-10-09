@@ -24,7 +24,13 @@ struct HopBoardApp: App {
                     // and the Allow Full Access switch inside it.
                     if url.host == "fullaccess",
                        let settings = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(settings)
+                        // Deferred: onOpenURL can land mid-launch, and a
+                        // jump to Settings issued before the scene is
+                        // active is dropped on the floor — which looked
+                        // exactly like "it just opened the app".
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            UIApplication.shared.open(settings)
+                        }
                     }
                 }
                 .task {

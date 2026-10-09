@@ -105,6 +105,11 @@ protocol FlowBackend {
 /// Keychain-backed shared storage. Items live in the team access group with
 /// AfterFirstUnlock so the backgrounded app can keep using them.
 final class KeychainBackend: FlowBackend {
+    /// Why the last write failed. Security silently swallows OSStatus
+    /// everywhere else in here, which is fine until the day IPC stops
+    /// working and the only thing anyone can say is "it doesn't work".
+    private(set) var lastStatus: OSStatus = errSecSuccess
+
     private func baseQuery(for key: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
@@ -127,11 +132,12 @@ final class KeychainBackend: FlowBackend {
     func set(_ data: Data, forKey key: String) {
         let update: [String: Any] = [kSecValueData as String: data]
         let status = SecItemUpdate(baseQuery(for: key) as CFDictionary, update as CFDictionary)
+        lastStatus = status
         guard status == errSecItemNotFound else { return }
         var add = baseQuery(for: key)
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(add as CFDictionary, nil)
+        lastStatus = SecItemAdd(add as CFDictionary, nil)
     }
 
     func removeValue(forKey key: String) {
@@ -191,6 +197,20 @@ final class FlowStore {
         let nonce = UUID().uuidString.data(using: .utf8)!
         backend.set(nonce, forKey: Key.probe)
         return backend.data(forKey: Key.probe) == nonce
+    }
+
+    /// What the last probe's write returned, named where there is a name
+    /// for it. -34018 is the one that matters: the entitlement is missing,
+    /// which is a signing problem and not something a user can fix by
+    /// toggling anything.
+    var probeDiagnosis: String {
+        guard let keychain = backend as? KeychainBackend else { return "no keychain" }
+        switch keychain.lastStatus {
+        case errSecSuccess: return "write ok, read back wrong"
+        case errSecMissingEntitlement: return "missing entitlement (-34018)"
+        case errSecInteractionNotAllowed: return "device locked (-25308)"
+        default: return "keychain \(keychain.lastStatus)"
+        }
     }
 
     // MARK: primitives
