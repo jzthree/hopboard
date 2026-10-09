@@ -102,20 +102,46 @@ actor Transcriber {
         }
         pipe = nil
         loadedModel = model
-        do {
-            let folder: URL
-            if let cached = Self.cachedModelFolder(for: model) {
-                folder = cached
-            } else {
-                set(.downloading(0))
-                folder = try await WhisperKit.download(
-                    variant: model,
-                    progressCallback: { [weak self] progress in
-                        let fraction = progress.fractionCompleted
-                        Task { await self?.applyDownloadProgress(fraction) }
-                    })
-            }
+
+        // What is already on disk gets the first try — but only a try.
+        // cachedModelFolder asks whether three bundles EXIST, and a
+        // download interrupted inside one of them leaves all three present
+        // and one of them hollow. That loaded as a hard failure which could
+        // never recover: the next attempt made the same existence check,
+        // skipped the download that would have repaired it, and failed
+        // again, for good. Loading is the only real integrity check there
+        // is, and the honest response to it failing is to go and fetch the
+        // model again rather than to give up.
+        if let cached = Self.cachedModelFolder(for: model) {
             set(.loading)
+            if await attachPipe(from: cached, model: model) { return }
+        }
+
+        do {
+            set(.downloading(0))
+            let folder = try await WhisperKit.download(
+                variant: model,
+                progressCallback: { [weak self] progress in
+                    let fraction = progress.fractionCompleted
+                    Task { await self?.applyDownloadProgress(fraction) }
+                })
+            set(.loading)
+            if await attachPipe(from: folder, model: model) { return }
+            // Downloaded and still unloadable: the files on disk are wrong
+            // in a way re-fetching the missing ones cannot fix. Clear them
+            // so the next attempt starts from nothing instead of inheriting
+            // the same broken state forever.
+            try? FileManager.default.removeItem(at: folder)
+            set(.failed("The model is damaged. It has been cleared — start a session again to download it fresh."))
+        } catch {
+            set(.failed(error.localizedDescription))
+        }
+    }
+
+    /// Returns false instead of throwing: at the first call site the
+    /// caller's next move is to re-download, not to report a failure.
+    private func attachPipe(from folder: URL, model: String) async -> Bool {
+        do {
             let config = WhisperKitConfig(
                 model: model,
                 modelFolder: folder.path,
@@ -125,8 +151,10 @@ actor Transcriber {
             pipe = try await WhisperKit(config)
             UserDefaults.standard.set(true, forKey: Self.optimizedKey(model))
             set(.ready)
+            return true
         } catch {
-            set(.failed(error.localizedDescription))
+            pipe = nil
+            return false
         }
     }
 

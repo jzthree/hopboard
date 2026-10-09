@@ -488,3 +488,41 @@ final class KeyHeightTests: XCTestCase {
         }
     }
 }
+
+final class SpaceBarTests: XCTestCase {
+    private func bottomRow(globe: Bool) -> [CGRect] {
+        let metrics = KeyboardMetrics.forWidth(393, idiom: .phone)
+        return KeyGeometry.frames(rows: KeyLayout.rows(for: .letters, showsGlobe: globe),
+                                  in: CGSize(width: 393, height: 258),
+                                  metrics: metrics)[3]
+    }
+
+    /// Space is hit most and aimed at least. Adding the globe took its
+    /// width out of space, shrinking the one key that should be hardest
+    /// to miss; the other four pay for it now.
+    func testSpaceOwnsAboutHalfTheBottomRow() {
+        for globe in [false, true] {
+            let row = bottomRow(globe: globe)
+            let space = globe ? row[3] : row[2]
+            let total = row.last!.maxX - row.first!.minX
+            let share = space.width / total
+            XCTAssertGreaterThan(share, 0.40,
+                                 "space is only \(Int(share * 100))% with globe=\(globe)")
+            XCTAssertLessThan(share, 0.60)
+        }
+        // And the globe must not have cost space more than it had to.
+        let withGlobe = bottomRow(globe: true)[3].width
+        let without = bottomRow(globe: false)[2].width
+        XCTAssertGreaterThan(withGlobe, without * 0.82,
+                             "the globe ate too much of the space bar")
+    }
+
+    func testEveryBottomRowKeyStaysHittable() {
+        for globe in [false, true] {
+            for key in bottomRow(globe: globe) {
+                XCTAssertGreaterThanOrEqual(key.width, 34,
+                                            "a bottom-row key is only \(key.width)pt wide")
+            }
+        }
+    }
+}

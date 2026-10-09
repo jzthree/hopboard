@@ -135,11 +135,18 @@ enum KeyLayout {
 
     private static func bottomRow(switchLabel: String, switchTo: KeyLayer,
                                   showsGlobe: Bool) -> KeyRow {
-        var keys: [KeyCap] = [.control(.layer(switchTo), label: switchLabel, width: 1.3)]
-        if showsGlobe { keys.append(.control(.globe, symbolName: "globe", width: 1.2)) }
-        keys.append(.control(.dictation, symbolName: "mic.fill", width: 1.3))
-        keys.append(KeyCap(action: .space, width: showsGlobe ? 3.4 : 4.4, label: "space"))
-        keys.append(.control(.newline, label: "return", width: 2.0))
+        // Space is the key you hit most and aim at least, so it takes the
+        // lion's share — about half the row, as the system keyboard gives
+        // it. Adding the globe paid for itself out of space, which made
+        // the one key that should be hardest to miss the one that shrank.
+        // The other four give the width up instead.
+        var keys: [KeyCap] = [.control(.layer(switchTo), label: switchLabel,
+                                       width: showsGlobe ? 1.15 : 1.2)]
+        if showsGlobe { keys.append(.control(.globe, symbolName: "globe", width: 1.0)) }
+        keys.append(.control(.dictation, symbolName: "mic.fill",
+                             width: showsGlobe ? 1.15 : 1.2))
+        keys.append(KeyCap(action: .space, width: showsGlobe ? 4.2 : 4.8, label: "space"))
+        keys.append(.control(.newline, label: "return", width: showsGlobe ? 1.7 : 1.8))
         return KeyRow(keys: keys)
     }
 }
