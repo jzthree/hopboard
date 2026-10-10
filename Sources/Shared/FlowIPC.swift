@@ -125,45 +125,29 @@ final class KeychainBackend: FlowBackend {
         ]
     }
 
+    // RESTORED to the form that worked for months, after I rewrote both
+    // primitives while chasing a bug and broke every read and write in the
+    // app on the way. kSecMatchLimitAll was the worst of it: it changed
+    // the shape of the result for EVERY key — session state, heartbeat,
+    // results, tone — not just the probe I was looking at.
     func data(forKey key: String) -> Data? {
-        // All matches, not the first one. A duplicate left behind by a
-        // previous install answers to the same service and account, and
-        // kSecMatchLimitOne hands back whichever the keychain feels like —
-        // which is how a write can succeed and the read come back stale.
         var query = baseQuery(for: key)
         query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitAll
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &out)
         lastReadStatus = status
-        guard status == errSecSuccess else {
-            lastReadCount = 0
-            return nil
-        }
-        if let items = out as? [Data] {
-            lastReadCount = items.count
-            return items.last
-        }
-        lastReadCount = 1
+        lastReadCount = status == errSecSuccess ? 1 : 0
+        guard status == errSecSuccess else { return nil }
         return out as? Data
     }
 
     func set(_ data: Data, forKey key: String) {
         let update: [String: Any] = [kSecValueData as String: data]
-        let updated = SecItemUpdate(baseQuery(for: key) as CFDictionary,
-                                    update as CFDictionary)
-        if updated == errSecSuccess {
-            lastStatus = updated
-            return
-        }
-        // ANY other outcome gets the same treatment: clear the slot and
-        // write it fresh. The old code only fell through on
-        // errSecItemNotFound and returned on everything else, so a single
-        // un-updatable item meant this key could never be written again —
-        // and deleting an app is exactly how you get one, since items in a
-        // shared access group outlive the install that made them and come
-        // back owned by an ACL the new install cannot touch.
-        SecItemDelete(baseQuery(for: key) as CFDictionary)
+        let status = SecItemUpdate(baseQuery(for: key) as CFDictionary,
+                                   update as CFDictionary)
+        lastStatus = status
+        guard status == errSecItemNotFound else { return }
         var add = baseQuery(for: key)
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
@@ -232,22 +216,9 @@ final class FlowStore {
     /// behind by a previous install: those answer the same query, and a
     /// read could return the stale one however well the write went.
     var isAvailable: Bool {
-        // A FRESH account name per attempt. The probe used to reuse one
-        // key, so a single item stuck in a state this process can neither
-        // read, update nor delete defeated it permanently — which is
-        // exactly what "write ok, read ok, 0 items" describes: the write
-        // reports success and the read finds nothing, for one particular
-        // name, for ever. A name nothing has used before cannot collide
-        // with a ghost. Each attempt cleans up after itself.
-        for _ in 0..<3 {
-            let key = Key.probe + "." + UUID().uuidString
-            let nonce = UUID().uuidString.data(using: .utf8)!
-            backend.set(nonce, forKey: key)
-            let readBack = backend.data(forKey: key)
-            backend.removeValue(forKey: key)
-            if readBack == nonce { return true }
-        }
-        return false
+        let nonce = UUID().uuidString.data(using: .utf8)!
+        backend.set(nonce, forKey: Key.probe)
+        return backend.data(forKey: Key.probe) == nonce
     }
 
     /// Evidence beats proxies. The probe asks whether a synthetic write

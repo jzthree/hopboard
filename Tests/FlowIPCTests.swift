@@ -318,66 +318,42 @@ final class FlakyBackend: FlowBackend {
 }
 
 final class IPCProbeTests: XCTestCase {
-    /// One bad round trip is not a broken channel, and calling it one is
-    /// expensive: the keyboard then refuses everything that needs the app,
-    /// and nothing retries until something else happens to poke it.
-    func testOneFailedRoundTripIsNotAVerdict() {
+    /// The probe is one write and one read of one key, as it was before I
+    /// started rewriting it. Retries and per-attempt key names were
+    /// guesses at a failure I never explained, and they rode on top of
+    /// primitives I had also changed — so they could not be evaluated.
+    func testAWorkingChannelCostsOneRoundTrip() {
         let flaky = FlakyBackend()
-        flaky.dropReads = 1
         XCTAssertTrue(FlowStore(backend: flaky).isAvailable)
+        XCTAssertEqual(flaky.reads, 1)
     }
 
-    func testAPersistentlyBrokenChannelIsStillReported() {
+    func testABrokenChannelIsReported() {
         let flaky = FlakyBackend()
         flaky.dropReads = 99
         XCTAssertFalse(FlowStore(backend: flaky).isAvailable)
     }
 
-    func testAWorkingChannelCostsOneRoundTrip() {
-        let flaky = FlakyBackend()
-        XCTAssertTrue(FlowStore(backend: flaky).isAvailable)
-        XCTAssertEqual(flaky.reads, 1, "the probe should not retry when it works")
-    }
-}
-
-final class ProbeKeyTests: XCTestCase {
-    /// Refuses one particular account name the way a jammed keychain item
-    /// does: writes report success, reads find nothing, for ever.
-    final class JammedKeyBackend: FlowBackend {
+    /// One key refusing to round-trip while every other key works — which
+    /// is what the device reported. The probe says no; the app's heartbeat
+    /// arriving here says yes, and it is the thing the probe only ever
+    /// stood in for, so it wins.
+    final class JammedProbeBackend: FlowBackend {
         private var storage: [String: Data] = [:]
-        let jammed: String
-        init(jammed: String) { self.jammed = jammed }
-        func data(forKey key: String) -> Data? { key == jammed ? nil : storage[key] }
-        func set(_ data: Data, forKey key: String) {
-            guard key != jammed else { return }   // "succeeds", stores nothing
-            storage[key] = data
+        func data(forKey key: String) -> Data? {
+            key == "flow.probe" ? nil : storage[key]
         }
+        func set(_ data: Data, forKey key: String) { storage[key] = data }
         func removeValue(forKey key: String) { storage[key] = nil }
         func keys(withPrefix prefix: String) -> [String] {
             storage.keys.filter { $0.hasPrefix(prefix) }
         }
     }
 
-    /// The probe must not be defeatable by a single bad name. It reused
-    /// one, so an item this process could neither read nor replace meant
-    /// the keyboard declared the app unreachable permanently — while
-    /// every other key worked perfectly.
-    func testAJammedProbeKeyDoesNotCondemnTheChannel() {
-        let store = FlowStore(backend: JammedKeyBackend(jammed: "flow.probe"))
-        XCTAssertTrue(store.isAvailable)
-    }
-
-    func testTheProbeLeavesNothingBehind() {
-        let backend = InMemoryBackend()
-        XCTAssertTrue(FlowStore(backend: backend).isAvailable)
-        XCTAssertTrue(backend.keys(withPrefix: "flow.probe").isEmpty,
-                      "the probe littered the keychain")
-    }
-
-    /// The app's own heartbeat arriving here is stronger evidence than any
-    /// synthetic round trip — it IS the thing the probe stands in for.
-    func testAFreshHeartbeatProvesTheChannelOnItsOwn() {
-        let store = FlowStore(backend: JammedKeyBackend(jammed: "flow.probe"))
-        XCTAssertTrue(store.ipcProven)
+    func testAFreshHeartbeatProvesTheChannelWhateverTheProbeSays() {
+        let store = FlowStore(backend: JammedProbeBackend())
+        store.heartbeat = Date()
+        XCTAssertFalse(store.isAvailable, "the probe key is jammed")
+        XCTAssertTrue(store.ipcProven, "but the app is demonstrably being heard")
     }
 }
