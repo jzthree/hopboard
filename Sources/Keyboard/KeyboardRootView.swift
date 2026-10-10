@@ -51,6 +51,7 @@ struct TypePad: UIViewRepresentable {
 
     func updateUIView(_ plane: KeyPlaneView, context: Context) {
         wireActions()
+        plane.showsTouchLog = model.touchLogOn
         plane.status = model.stripStatus
         plane.chips = model.stripChips
     }

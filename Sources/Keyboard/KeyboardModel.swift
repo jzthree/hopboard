@@ -38,23 +38,15 @@ final class KeyboardModel: ObservableObject {
     /// dictation row used to show has to fit here now, including the two
     /// things the keyboard cannot fix by itself.
     var stripStatus: DictationStatus {
-        guard ipcAvailable else {
-            // Two very different failures wore the same label. If iOS says
-            // Full Access is already granted, telling someone to go and
-            // grant it is worse than useless — they have, and the real
-            // fault is the app link itself.
-            guard controller?.keyboardHasFullAccess == true else {
-                return DictationStatus(phase: .message("Tap to turn on Full Access"))
-            }
-            // The build number has to come from the EXTENSION itself and
-            // not through the store, because the store is the thing that
-            // is broken. iOS keeps old .appex binaries alive across app
-            // reinstalls, so "the fix did not work" and "the fix is not
-            // running" look identical from the outside, and this is the
-            // only place that can tell them apart right now.
-            let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-            return DictationStatus(
-                phase: .message("kb \(build) · unreachable · \(store.probeDiagnosis)"))
+        // iOS's own answer, not a proxy for it. A synthetic write/read of
+        // a scratch key was standing between the user and every feature
+        // that needs the app, and when that round trip failed — for
+        // reasons three rewrites could not pin down — the keyboard refused
+        // to even TRY the thing the probe was only ever predicting. The
+        // channel gets to prove itself by carrying real traffic: the app's
+        // heartbeat either arrives here or it does not.
+        guard controller?.keyboardHasFullAccess == true else {
+            return DictationStatus(phase: .message("Tap to turn on Full Access"))
         }
         switch state {
         case .recording:
@@ -97,16 +89,25 @@ final class KeyboardModel: ObservableObject {
         chips.append(.init(title: "End", symbol: nil))
         chips.append(.init(title: "Settings", symbol: nil))
         chips.append(.init(title: keyboardBuildLabel, symbol: nil))
+        chips.append(.init(title: store.probeDiagnosis, symbol: nil))
+        chips.append(.init(title: touchLogOn ? "Taps ON" : "Taps", symbol: nil))
         return chips
     }
 
     func toggleChips() { chipsOpen.toggle() }
 
+    /// Debug overlay: show every touch the key plane receives.
+    @Published private(set) var touchLogOn = false
+
     func pickChip(at index: Int) {
         let chips = stripChips
         guard chips.indices.contains(index) else { return }
         switch chips[index].title {
-        case keyboardBuildLabel: chipsOpen = false   // a label, but never a dead tap
+        case keyboardBuildLabel, store.probeDiagnosis:
+            chipsOpen = false   // labels, but never dead taps
+        case "Taps", "Taps ON":
+            touchLogOn.toggle()
+            chipsOpen = false
         case languageLabel: cycleLanguage()
         case "Again": retranscribeLast()
         case "End": endSessionTapped()
@@ -281,7 +282,7 @@ final class KeyboardModel: ObservableObject {
         // coming (the app cannot send one to a keyboard it cannot reach),
         // one unlucky first probe used to mean the keyboard sat on "turn
         // on Full Access" forever, with nothing able to change its mind.
-        guard isVisible, dictating || !ipcAvailable else { return }
+        guard isVisible, dictating || state == .needsFullAccess else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -462,13 +463,9 @@ final class KeyboardModel: ObservableObject {
         guard controller != nil else { return }
         if !ipcAvailable {
             ipcAvailable = store.ipcProven
-            if ipcAvailable {
-                store.keyboardSeen = true
-                // Recovered: the retry poll has done its job and can stop.
-                syncPollTimer()
-            }
+            if ipcAvailable { store.keyboardSeen = true }
         }
-        guard ipcAvailable else {
+        guard controller?.keyboardHasFullAccess == true else {
             state = .needsFullAccess
             return
         }

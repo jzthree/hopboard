@@ -87,6 +87,20 @@ final class KeyPlaneView: UIView {
     private let candidates = CandidateBarView()
     private let strip = DictationStripView()
     private let chipsView = StripChipsView()
+    /// A visible record of the last touch this view received: which key it
+    /// resolved to and where it landed. Four rounds of "still dead" against
+    /// tests that say every point is covered means my picture of the
+    /// device is wrong somewhere I cannot see — so stop picturing it. If a
+    /// tap on a gap prints nothing, the touch never arrived and the fault
+    /// is above this view; if it prints a key, the touch arrived and the
+    /// fault is after it.
+    private let touchLog = UILabel()
+    var showsTouchLog = false {
+        didSet {
+            touchLog.isHidden = !showsTouchLog
+            if showsTouchLog { bringSubviewToFront(touchLog) }
+        }
+    }
     /// The handful of controls the dictation row used to hold. Empty means
     /// closed; the mic key's hold opens them.
     var chips: [StripChipsView.Chip] = [] {
@@ -117,6 +131,14 @@ final class KeyPlaneView: UIView {
         addSubview(candidates)
         addSubview(strip)
         addSubview(chipsView)
+        touchLog.isHidden = true
+        touchLog.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
+        touchLog.textAlignment = .center
+        touchLog.textColor = .systemOrange
+        touchLog.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        touchLog.isUserInteractionEnabled = false
+        touchLog.text = "taps: none yet"
+        addSubview(touchLog)
         chipsView.onPick = { [weak self] index in
             guard let self else { return }
             KeyFeedback.tap()
@@ -229,6 +251,8 @@ final class KeyPlaneView: UIView {
         candidates.frame = stripFrame
         strip.frame = stripFrame
         chipsView.frame = stripFrame
+        touchLog.frame = stripFrame
+        if showsTouchLog { bringSubviewToFront(touchLog) }
         frames = KeyGeometry.frames(rows: rows, in: bounds.size, metrics: metrics)
         for (rowIndex, row) in keyViews.enumerated() {
             for (colIndex, view) in row.enumerated() {
@@ -321,7 +345,19 @@ final class KeyPlaneView: UIView {
         // tap to land on nothing.
         if frames.isEmpty { layoutIfNeeded() }
         for touch in touches {
-            guard let index = keyIndex(at: touch.location(in: self)) else { continue }
+            let where_ = touch.location(in: self)
+            guard let index = keyIndex(at: where_) else {
+                if showsTouchLog {
+                    touchLog.text = String(format: "DOWN (%.0f,%.0f) → NO KEY", where_.x, where_.y)
+                }
+                continue
+            }
+            if showsTouchLog {
+                let label = rows[index.row].keys[index.col].title(shifted: isShifted)
+                    ?? rows[index.row].keys[index.col].label ?? "?"
+                touchLog.text = String(format: "DOWN (%.0f,%.0f) → %@",
+                                       where_.x, where_.y, label)
+            }
             let state = Touching(row: index.row, col: index.col)
             touching[ObjectIdentifier(touch)] = state
             KeyFeedback.tap()
@@ -373,6 +409,11 @@ final class KeyPlaneView: UIView {
         state.alternates?.removeFromSuperview()
         state.alternates = nil
         if cap(state).action == .backspace { stopBackspaceRepeat() }
+        if showsTouchLog {
+            let label = cap(state).title(shifted: isShifted) ?? cap(state).label ?? "?"
+            touchLog.text = (touchLog.text ?? "")
+                + (commit && !state.consumed ? " · UP \(label)" : " · CANCELLED")
+        }
         guard commit, !state.consumed else { return }
         if let chosen {
             insert(chosen)
