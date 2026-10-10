@@ -131,9 +131,20 @@ final class KeychainBackend: FlowBackend {
 
     func set(_ data: Data, forKey key: String) {
         let update: [String: Any] = [kSecValueData as String: data]
-        let status = SecItemUpdate(baseQuery(for: key) as CFDictionary, update as CFDictionary)
-        lastStatus = status
-        guard status == errSecItemNotFound else { return }
+        let updated = SecItemUpdate(baseQuery(for: key) as CFDictionary,
+                                    update as CFDictionary)
+        if updated == errSecSuccess {
+            lastStatus = updated
+            return
+        }
+        // ANY other outcome gets the same treatment: clear the slot and
+        // write it fresh. The old code only fell through on
+        // errSecItemNotFound and returned on everything else, so a single
+        // un-updatable item meant this key could never be written again —
+        // and deleting an app is exactly how you get one, since items in a
+        // shared access group outlive the install that made them and come
+        // back owned by an ACL the new install cannot touch.
+        SecItemDelete(baseQuery(for: key) as CFDictionary)
         var add = baseQuery(for: key)
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock

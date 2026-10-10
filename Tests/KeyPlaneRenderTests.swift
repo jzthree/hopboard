@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import UIKit
 @testable import HopBoard
 
@@ -95,5 +96,55 @@ final class TouchCoverageTests: XCTestCase {
         }
         XCTAssertTrue(unowned.isEmpty, "\(unowned.count) points belong to nothing")
         XCTAssertTrue(stolen.isEmpty, "\(stolen.count) points go to a key view")
+    }
+}
+
+/// Sweeping the plane proves the plane. It does not prove that the plane
+/// FILLS the keyboard — the SwiftUI host in between can inset it, and an
+/// inset band reaches no key at all. Jian has reported dead space four
+/// times; this tests the whole chain rather than the part I happened to
+/// be looking at.
+@MainActor
+final class HostingCoverageTests: XCTestCase {
+    private struct ProbePad: UIViewRepresentable {
+        let plane: KeyPlaneView
+        func makeUIView(context: Context) -> KeyPlaneView { plane }
+        func updateUIView(_ uiView: KeyPlaneView, context: Context) {}
+    }
+
+    func testEveryPointOfTheKeyboardReachesTheKeys() {
+        let plane = KeyPlaneView(frame: .zero)
+        let host = UIHostingController(rootView: ProbePad(plane: plane).ignoresSafeArea())
+        host.safeAreaRegions = []
+        host.view.insetsLayoutMarginsFromSafeArea = false
+        // The home indicator's band, which is what used to be stolen.
+        host.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: 34, right: 0)
+        // In a real window: a detached hosting controller never runs
+        // SwiftUI's layout pass, and measuring that would prove nothing.
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 258))
+        window.rootViewController = host
+        window.isHidden = false
+        window.layoutIfNeeded()
+        plane.seedContext("")
+        window.layoutIfNeeded()
+
+        XCTAssertEqual(plane.frame, host.view.bounds,
+                       "the keys do not fill the keyboard: \(plane.frame)")
+
+        var unreachable: [CGPoint] = []
+        // `to:`, not `through:` — a 258pt view does not contain y = 258,
+        // and sweeping the exclusive edge measures the coordinate system
+        // rather than the keyboard.
+        for x in stride(from: CGFloat(0), to: host.view.bounds.width, by: 3) {
+            for y in stride(from: CGFloat(0), to: host.view.bounds.height, by: 3) {
+                let point = CGPoint(x: x, y: y)
+                let hit = host.view.hitTest(point, with: nil)
+                let landed = hit === plane || (hit?.isDescendant(of: plane) ?? false)
+                if !landed { unreachable.append(point) }
+            }
+        }
+        XCTAssertTrue(unreachable.isEmpty,
+                      "\(unreachable.count) points never reach the keys, "
+                      + "first at \(unreachable.first ?? .zero)")
     }
 }

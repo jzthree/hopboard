@@ -24,6 +24,12 @@ final class KeyboardViewController: UIInputViewController {
         model = KeyboardModel(controller: self)
         host = UIHostingController(rootView: KeyboardRootView(model: model))
         host.view.backgroundColor = .clear
+        // The keyboard owns every point of its own view, home-indicator
+        // band included. SwiftUI would otherwise inset the hosted content
+        // for the safe area and leave a strip along the bottom that
+        // belongs to no key.
+        host.safeAreaRegions = []
+        host.view.insetsLayoutMarginsFromSafeArea = false
         addChild(host)
         view.addSubview(host.view)
         host.view.translatesAutoresizingMaskIntoConstraints = false

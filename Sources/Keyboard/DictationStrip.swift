@@ -62,6 +62,10 @@ final class DictationStripView: UIView {
             ticker?.invalidate(); ticker = nil
             return
         }
+        // Transcribing has no action, so the strip stops intercepting and
+        // the keys underneath get the touch back. A region that is visible
+        // but inert is still dead space.
+        isUserInteractionEnabled = new.phase != .transcribing
         if phaseChanged {
             ticker?.invalidate()
             ticker = nil
