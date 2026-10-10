@@ -298,3 +298,44 @@ final class FlowVocabularyTests: XCTestCase {
         XCTAssertNotEqual(FlowVocabulary.pinyin("张伟"), FlowVocabulary.pinyin("李明"))
     }
 }
+
+/// Drops the first N reads, then behaves. A keychain round trip can fail
+/// once for reasons that have nothing to do with the channel being broken.
+final class FlakyBackend: FlowBackend {
+    private var storage: [String: Data] = [:]
+    var dropReads = 0
+    private(set) var reads = 0
+    func data(forKey key: String) -> Data? {
+        reads += 1
+        if reads <= dropReads { return nil }
+        return storage[key]
+    }
+    func set(_ data: Data, forKey key: String) { storage[key] = data }
+    func removeValue(forKey key: String) { storage[key] = nil }
+    func keys(withPrefix prefix: String) -> [String] {
+        storage.keys.filter { $0.hasPrefix(prefix) }
+    }
+}
+
+final class IPCProbeTests: XCTestCase {
+    /// One bad round trip is not a broken channel, and calling it one is
+    /// expensive: the keyboard then refuses everything that needs the app,
+    /// and nothing retries until something else happens to poke it.
+    func testOneFailedRoundTripIsNotAVerdict() {
+        let flaky = FlakyBackend()
+        flaky.dropReads = 1
+        XCTAssertTrue(FlowStore(backend: flaky).isAvailable)
+    }
+
+    func testAPersistentlyBrokenChannelIsStillReported() {
+        let flaky = FlakyBackend()
+        flaky.dropReads = 99
+        XCTAssertFalse(FlowStore(backend: flaky).isAvailable)
+    }
+
+    func testAWorkingChannelCostsOneRoundTrip() {
+        let flaky = FlakyBackend()
+        XCTAssertTrue(FlowStore(backend: flaky).isAvailable)
+        XCTAssertEqual(flaky.reads, 1, "the probe should not retry when it works")
+    }
+}

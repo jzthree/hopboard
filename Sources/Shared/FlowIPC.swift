@@ -109,6 +109,11 @@ final class KeychainBackend: FlowBackend {
     /// everywhere else in here, which is fine until the day IPC stops
     /// working and the only thing anyone can say is "it doesn't work".
     private(set) var lastStatus: OSStatus = errSecSuccess
+    /// And why the last READ failed. "Write ok, read back wrong" was true
+    /// but useless: it could not tell an item that was not there from one
+    /// that was there with different bytes, and those are different bugs.
+    private(set) var lastReadStatus: OSStatus = errSecSuccess
+    private(set) var lastReadCount = 0
 
     private func baseQuery(for key: String) -> [String: Any] {
         [
@@ -121,11 +126,25 @@ final class KeychainBackend: FlowBackend {
     }
 
     func data(forKey key: String) -> Data? {
+        // All matches, not the first one. A duplicate left behind by a
+        // previous install answers to the same service and account, and
+        // kSecMatchLimitOne hands back whichever the keychain feels like —
+        // which is how a write can succeed and the read come back stale.
         var query = baseQuery(for: key)
         query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecMatchLimit as String] = kSecMatchLimitAll
         var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess else { return nil }
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        lastReadStatus = status
+        guard status == errSecSuccess else {
+            lastReadCount = 0
+            return nil
+        }
+        if let items = out as? [Data] {
+            lastReadCount = items.count
+            return items.last
+        }
+        lastReadCount = 1
         return out as? Data
     }
 
@@ -204,10 +223,22 @@ final class FlowStore {
         self.backend = backend
     }
 
+    /// Can this process actually exchange data with the other one?
+    ///
+    /// Retried, because a single failed round trip is not evidence of a
+    /// broken channel — and declaring it broken is expensive, since the
+    /// keyboard then refuses to do anything that needs the app. The first
+    /// attempt also CLEARS the slot, which is the fix for a duplicate left
+    /// behind by a previous install: those answer the same query, and a
+    /// read could return the stale one however well the write went.
     var isAvailable: Bool {
-        let nonce = UUID().uuidString.data(using: .utf8)!
-        backend.set(nonce, forKey: Key.probe)
-        return backend.data(forKey: Key.probe) == nonce
+        for attempt in 0..<3 {
+            if attempt == 1 { backend.removeValue(forKey: Key.probe) }
+            let nonce = UUID().uuidString.data(using: .utf8)!
+            backend.set(nonce, forKey: Key.probe)
+            if backend.data(forKey: Key.probe) == nonce { return true }
+        }
+        return false
     }
 
     /// What the last probe's write returned, named where there is a name
@@ -216,12 +247,17 @@ final class FlowStore {
     /// toggling anything.
     var probeDiagnosis: String {
         guard let keychain = backend as? KeychainBackend else { return "no keychain" }
-        switch keychain.lastStatus {
-        case errSecSuccess: return "write ok, read back wrong"
-        case errSecMissingEntitlement: return "missing entitlement (-34018)"
-        case errSecInteractionNotAllowed: return "device locked (-25308)"
-        default: return "keychain \(keychain.lastStatus)"
+        if keychain.lastStatus != errSecSuccess {
+            switch keychain.lastStatus {
+            case errSecMissingEntitlement: return "write -34018 entitlement"
+            case errSecInteractionNotAllowed: return "write -25308 locked"
+            default: return "write \(keychain.lastStatus)"
+            }
         }
+        if keychain.lastReadStatus != errSecSuccess {
+            return "read \(keychain.lastReadStatus)"
+        }
+        return "read ok, \(keychain.lastReadCount) items, bytes differ"
     }
 
     // MARK: primitives
