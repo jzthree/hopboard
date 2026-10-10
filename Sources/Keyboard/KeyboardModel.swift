@@ -46,9 +46,15 @@ final class KeyboardModel: ObservableObject {
             guard controller?.keyboardHasFullAccess == true else {
                 return DictationStatus(phase: .message("Tap to turn on Full Access"))
             }
+            // The build number has to come from the EXTENSION itself and
+            // not through the store, because the store is the thing that
+            // is broken. iOS keeps old .appex binaries alive across app
+            // reinstalls, so "the fix did not work" and "the fix is not
+            // running" look identical from the outside, and this is the
+            // only place that can tell them apart right now.
+            let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
             return DictationStatus(
-                phase: .message("Full Access is on but the app is unreachable — "
-                                + store.probeDiagnosis))
+                phase: .message("kb \(build) · unreachable · \(store.probeDiagnosis)"))
         }
         switch state {
         case .recording:

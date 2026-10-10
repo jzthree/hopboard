@@ -316,6 +316,10 @@ final class KeyPlaneView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // A touch that arrives before the first layout would find no key
+        // frames to be nearest TO, and be dropped — the one way left for a
+        // tap to land on nothing.
+        if frames.isEmpty { layoutIfNeeded() }
         for touch in touches {
             guard let index = keyIndex(at: touch.location(in: self)) else { continue }
             let state = Touching(row: index.row, col: index.col)
