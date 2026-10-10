@@ -221,6 +221,15 @@ final class SessionManager: ObservableObject {
     }
     var keyboardBuild: String { store.keyboardBuild }
 
+    /// The same probe the keyboard runs, run from the APP. If this one
+    /// works and the keyboard's does not, the fault is specific to the
+    /// extension's process. If both fail, the shared keychain is broken
+    /// for this app entirely and no amount of keyboard work will help —
+    /// which is worth knowing before spending another day on the keyboard.
+    var keychainStatus: String {
+        store.isAvailable ? "ok" : store.probeDiagnosis
+    }
+
     private func refreshDeliveries() {
         let latest = Dictionary(store.deliveries.map { ($0.id, $0) },
                                 uniquingKeysWith: { _, newer in newer })

@@ -9,6 +9,10 @@ protocol KeyPlaneDelegate: AnyObject {
     /// Hold the mic key: go to the dictation row itself, where language,
     /// tone, history and settings live.
     func keyPlaneDidHoldDictation(_ plane: KeyPlaneView)
+    /// The empty row above the keys, tapped. The controls have to be
+    /// reachable without a long press — a hold cannot be the only way to
+    /// reach the thing you need when holding is what is broken.
+    func keyPlaneDidTapIdleStrip(_ plane: KeyPlaneView)
     /// The dictation strip's two actions: stop-or-insert, and
     /// discard-or-transcribe-again.
     func keyPlaneStripPrimary(_ plane: KeyPlaneView)
@@ -327,6 +331,11 @@ final class KeyPlaneView: UIView {
     /// Clamped, not force-indexed. Belt and braces behind the touch purge
     /// above: a keyboard that traps on an index is worse than one that
     /// types the wrong letter, which is the whole philosophy here.
+    /// Nothing is using the row above the keys.
+    private var stripIsIdle: Bool {
+        chipsView.isHidden && strip.isHidden && candidates.isHidden
+    }
+
     private func cap(_ state: Touching) -> KeyCap {
         let row = min(max(state.row, 0), rows.count - 1)
         let col = min(max(state.col, 0), rows[row].keys.count - 1)
@@ -357,6 +366,16 @@ final class KeyPlaneView: UIView {
                     ?? rows[index.row].keys[index.col].label ?? "?"
                 touchLog.text = String(format: "DOWN (%.0f,%.0f) → %@",
                                        where_.x, where_.y, label)
+            }
+            // The strip, with nothing in it, is a control surface rather
+            // than an extension of the top row.
+            if where_.y < topInset - 8, stripIsIdle {
+                let state = Touching(row: index.row, col: index.col)
+                state.consumed = true
+                touching[ObjectIdentifier(touch)] = state
+                KeyFeedback.tap()
+                delegate?.keyPlaneDidTapIdleStrip(self)
+                continue
             }
             let state = Touching(row: index.row, col: index.col)
             touching[ObjectIdentifier(touch)] = state
@@ -565,7 +584,7 @@ final class KeyPlaneView: UIView {
         // and transcribe-again live. Without this they are unreachable
         // from the keys.
         if cap(state).action == .dictation {
-            state.longPress = Timer.scheduledTimer(withTimeInterval: 0.45,
+            state.longPress = Timer.scheduledTimer(withTimeInterval: 0.3,
                                                    repeats: false) { [weak self, weak state] _ in
                 MainActor.assumeIsolated {
                     guard let self, let state else { return }

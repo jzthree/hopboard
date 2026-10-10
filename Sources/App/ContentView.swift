@@ -425,6 +425,7 @@ struct ContentView: View {
             Text(keyboard.isEmpty
                  ? "App build \(session.appBuild) · keyboard not run yet"
                  : "App build \(session.appBuild) · keyboard build \(keyboard)")
+            Text("· app keychain: \(session.keychainStatus)")
             if stale {
                 Text("— iOS is still running the old keyboard. Remove and re-add HopBoard in Settings ▸ Keyboards.")
             }

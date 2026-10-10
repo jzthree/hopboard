@@ -73,7 +73,8 @@ struct TypePad: UIViewRepresentable {
         func keyPlaneDidBackspace(_ plane: KeyPlaneView) { model.deleteTapped() }
         func keyPlaneDidTapReturn(_ plane: KeyPlaneView) { model.returnTapped() }
         func keyPlaneDidTapDictation(_ plane: KeyPlaneView) { model.dictationKeyTapped() }
-        func keyPlaneDidHoldDictation(_ plane: KeyPlaneView) { model.toggleChips() }
+        func keyPlaneDidHoldDictation(_ plane: KeyPlaneView) { model.openChips() }
+        func keyPlaneDidTapIdleStrip(_ plane: KeyPlaneView) { model.openChips() }
         func keyPlaneStripPrimary(_ plane: KeyPlaneView) { model.stripPrimary() }
         func keyPlaneStripSecondary(_ plane: KeyPlaneView) { model.stripSecondary() }
         func keyPlaneDidPickChip(_ plane: KeyPlaneView, at index: Int) {

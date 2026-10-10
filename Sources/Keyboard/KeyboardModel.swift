@@ -94,7 +94,11 @@ final class KeyboardModel: ObservableObject {
         return chips
     }
 
-    func toggleChips() { chipsOpen.toggle() }
+    /// OPEN, not toggle. A long press that fires twice — a finger that
+    /// drifts a key and comes back re-arms the timer — flipped this
+    /// straight back shut, which is exactly "it toggles back after a sec".
+    /// Opening twice is harmless; every chip closes it again.
+    func openChips() { chipsOpen = true }
 
     /// Debug overlay: show every touch the key plane receives.
     @Published private(set) var touchLogOn = false
