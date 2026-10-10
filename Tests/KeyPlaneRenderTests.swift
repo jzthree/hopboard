@@ -196,3 +196,78 @@ final class StripPriorityTests: XCTestCase {
         XCTAssertGreaterThan(strip?.frame.height ?? 0, 20)
     }
 }
+
+/// Jian: "try to tap between keys to test dead zone too."
+///
+/// Every previous test here reasons about geometry or hit testing. None
+/// of them ever put a finger on a key and checked that something came
+/// out. This sweeps the whole surface through the real resolve-and-commit
+/// path and records what each tap PRODUCED.
+@MainActor
+final class SyntheticTapTests: XCTestCase {
+    private final class Recorder: KeyPlaneDelegate {
+        var inserted: [String] = []
+        var deletes = 0
+        func keyPlane(_ plane: KeyPlaneView, didInsert text: String) { inserted.append(text) }
+        func keyPlaneDidBackspace(_ plane: KeyPlaneView) { deletes += 1 }
+        func keyPlaneDidTapReturn(_ plane: KeyPlaneView) { inserted.append("\n") }
+        func keyPlaneDidTapDictation(_ plane: KeyPlaneView) {}
+        func keyPlaneDidHoldDictation(_ plane: KeyPlaneView) {}
+        func keyPlaneDidTapIdleStrip(_ plane: KeyPlaneView) {}
+        func keyPlaneStripPrimary(_ plane: KeyPlaneView) {}
+        func keyPlaneStripSecondary(_ plane: KeyPlaneView) {}
+        func keyPlaneDidPickChip(_ plane: KeyPlaneView, at index: Int) {}
+        func keyPlane(_ plane: KeyPlaneView, replaceLast count: Int, with text: String) {}
+    }
+
+    func testEveryTapAnywhereProducesAnAction() {
+        let recorder = Recorder()
+        let plane = KeyPlaneView(frame: CGRect(x: 0, y: 0, width: 393, height: 258))
+        plane.delegate = recorder
+        plane.seedContext("")
+        plane.layoutIfNeeded()
+
+        var dead: [CGPoint] = []
+        var gapTaps = 0
+        let frames = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
+                                        in: plane.bounds.size,
+                                        metrics: KeyboardMetrics.forWidth(393))
+        for x in stride(from: CGFloat(1), to: plane.bounds.width, by: 3) {
+            for y in stride(from: CGFloat(1), to: plane.bounds.height, by: 3) {
+                let point = CGPoint(x: x, y: y)
+                // Is this point in the crack between two keys?
+                let inside = frames.contains { row in row.contains { $0.contains(point) } }
+                if !inside { gapTaps += 1 }
+                if plane.simulateTap(at: point) == nil { dead.append(point) }
+            }
+        }
+        XCTAssertGreaterThan(gapTaps, 200, "the sweep never landed between keys")
+        XCTAssertTrue(dead.isEmpty, "\(dead.count) taps produced nothing, first \(dead.first!)")
+    }
+
+    /// Specifically the cracks: the midpoint of every gap between two
+    /// adjacent keys, and the four edges, must type something.
+    func testTheCracksBetweenKeysType() {
+        let recorder = Recorder()
+        let plane = KeyPlaneView(frame: CGRect(x: 0, y: 0, width: 393, height: 258))
+        plane.delegate = recorder
+        plane.seedContext("")
+        plane.layoutIfNeeded()
+        let frames = KeyGeometry.frames(rows: KeyLayout.rows(for: .letters),
+                                        in: plane.bounds.size,
+                                        metrics: KeyboardMetrics.forWidth(393))
+        var tried = 0
+        for row in frames {
+            for (a, b) in zip(row, row.dropFirst()) {
+                let crack = CGPoint(x: (a.maxX + b.minX) / 2, y: a.midY)
+                XCTAssertNotNil(plane.simulateTap(at: crack), "dead crack at \(crack)")
+                tried += 1
+            }
+            // And the gap below this row.
+            let below = CGPoint(x: row[0].midX, y: row[0].maxY + 4)
+            XCTAssertNotNil(plane.simulateTap(at: below), "dead gap under a row")
+        }
+        XCTAssertGreaterThan(tried, 25)
+        XCTAssertFalse(recorder.inserted.isEmpty, "cracks resolved but nothing was typed")
+    }
+}

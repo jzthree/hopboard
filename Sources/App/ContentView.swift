@@ -501,6 +501,8 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Tap a dictation to copy it. Everything is transcribed on-device; audio never leaves your iPhone.")
                 buildStamp
+                NavigationLink("Keyboard bench") { KeyboardBench() }
+                    .font(.caption)
                 if session.canRetranscribe {
                     Button {
                         session.retranscribe()

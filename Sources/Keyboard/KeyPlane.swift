@@ -315,6 +315,21 @@ final class KeyPlaneView: UIView {
         rebuildKeys()
     }
 
+    /// A tap, without UIKit. Runs the SAME resolution and the SAME commit
+    /// the touch handlers run — nearest key, touch rise, commitKey — so a
+    /// sweep over it exercises the real path rather than the geometry
+    /// helper underneath it. Everything above this point (UIKit's delivery
+    /// of the touch) is the only thing left untested, which is exactly the
+    /// division a dead-zone report needs.
+    func simulateTap(at point: CGPoint) -> KeyAction? {
+        if frames.isEmpty { layoutIfNeeded() }
+        guard let index = keyIndex(at: point) else { return nil }
+        let state = Touching(row: index.row, col: index.col)
+        let action = cap(state).action
+        commitKey(cap(state))
+        return action
+    }
+
     // MARK: touches
 
     /// Every point in the keyboard belongs to something, and the default

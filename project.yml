@@ -14,6 +14,19 @@ targets:
     sources:
       - Sources/App
       - Sources/Shared
+      # The key plane itself, so the app can host a BENCH for it. The
+      # keyboard extension cannot be driven in a simulator — enabling a
+      # custom keyboard needs Settings taps, and the keychain group needs
+      # entitlements the simulator will not grant — so the only way to put
+      # a synthetic finger on these keys is to run them inside the app.
+      - Sources/Keyboard/KeyLayout.swift
+      - Sources/Keyboard/KeyboardMetrics.swift
+      - Sources/Keyboard/TypingEngine.swift
+      - Sources/Keyboard/Autocorrect.swift
+      - Sources/Keyboard/KeyFeedback.swift
+      - Sources/Keyboard/KeyViews.swift
+      - Sources/Keyboard/DictationStrip.swift
+      - Sources/Keyboard/KeyPlane.swift
     dependencies:
       - package: ArgmaxOSS
         product: WhisperKit
