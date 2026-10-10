@@ -339,3 +339,45 @@ final class IPCProbeTests: XCTestCase {
         XCTAssertEqual(flaky.reads, 1, "the probe should not retry when it works")
     }
 }
+
+final class ProbeKeyTests: XCTestCase {
+    /// Refuses one particular account name the way a jammed keychain item
+    /// does: writes report success, reads find nothing, for ever.
+    final class JammedKeyBackend: FlowBackend {
+        private var storage: [String: Data] = [:]
+        let jammed: String
+        init(jammed: String) { self.jammed = jammed }
+        func data(forKey key: String) -> Data? { key == jammed ? nil : storage[key] }
+        func set(_ data: Data, forKey key: String) {
+            guard key != jammed else { return }   // "succeeds", stores nothing
+            storage[key] = data
+        }
+        func removeValue(forKey key: String) { storage[key] = nil }
+        func keys(withPrefix prefix: String) -> [String] {
+            storage.keys.filter { $0.hasPrefix(prefix) }
+        }
+    }
+
+    /// The probe must not be defeatable by a single bad name. It reused
+    /// one, so an item this process could neither read nor replace meant
+    /// the keyboard declared the app unreachable permanently — while
+    /// every other key worked perfectly.
+    func testAJammedProbeKeyDoesNotCondemnTheChannel() {
+        let store = FlowStore(backend: JammedKeyBackend(jammed: "flow.probe"))
+        XCTAssertTrue(store.isAvailable)
+    }
+
+    func testTheProbeLeavesNothingBehind() {
+        let backend = InMemoryBackend()
+        XCTAssertTrue(FlowStore(backend: backend).isAvailable)
+        XCTAssertTrue(backend.keys(withPrefix: "flow.probe").isEmpty,
+                      "the probe littered the keychain")
+    }
+
+    /// The app's own heartbeat arriving here is stronger evidence than any
+    /// synthetic round trip — it IS the thing the probe stands in for.
+    func testAFreshHeartbeatProvesTheChannelOnItsOwn() {
+        let store = FlowStore(backend: JammedKeyBackend(jammed: "flow.probe"))
+        XCTAssertTrue(store.ipcProven)
+    }
+}

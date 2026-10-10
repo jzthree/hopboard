@@ -232,13 +232,40 @@ final class FlowStore {
     /// behind by a previous install: those answer the same query, and a
     /// read could return the stale one however well the write went.
     var isAvailable: Bool {
-        for attempt in 0..<3 {
-            if attempt == 1 { backend.removeValue(forKey: Key.probe) }
+        // A FRESH account name per attempt. The probe used to reuse one
+        // key, so a single item stuck in a state this process can neither
+        // read, update nor delete defeated it permanently — which is
+        // exactly what "write ok, read ok, 0 items" describes: the write
+        // reports success and the read finds nothing, for one particular
+        // name, for ever. A name nothing has used before cannot collide
+        // with a ghost. Each attempt cleans up after itself.
+        for _ in 0..<3 {
+            let key = Key.probe + "." + UUID().uuidString
             let nonce = UUID().uuidString.data(using: .utf8)!
-            backend.set(nonce, forKey: Key.probe)
-            if backend.data(forKey: Key.probe) == nonce { return true }
+            backend.set(nonce, forKey: key)
+            let readBack = backend.data(forKey: key)
+            backend.removeValue(forKey: key)
+            if readBack == nonce { return true }
         }
         return false
+    }
+
+    /// Evidence beats proxies. The probe asks whether a synthetic write
+    /// survives a round trip; the heartbeat is the app's own writing,
+    /// arriving here, which is the only thing the probe was ever standing
+    /// in for. If that is readable and fresh then IPC demonstrably works,
+    /// whatever a test key does.
+    var ipcProven: Bool {
+        isAvailable || Date().timeIntervalSince(heartbeat) < Flow.heartbeatTimeout
+    }
+
+    /// Sweep up probe keys from older builds, which reused one name and
+    /// may have left it jammed.
+    func clearStaleProbes() {
+        backend.removeValue(forKey: Key.probe)
+        for key in backend.keys(withPrefix: Key.probe + ".") {
+            backend.removeValue(forKey: key)
+        }
     }
 
     /// What the last probe's write returned, named where there is a name

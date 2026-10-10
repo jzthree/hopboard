@@ -227,7 +227,10 @@ final class KeyboardModel: ObservableObject {
         // sync run right after.
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.ipcAvailable = self.store.isAvailable
+            // One-time sweep: a jammed probe key from an older build is
+            // the thing that made this permanent.
+            self.store.clearStaleProbes()
+            self.ipcAvailable = self.store.ipcProven
             self.syncPollTimer()
             if self.ipcAvailable {
                 self.store.keyboardSeen = true
@@ -446,7 +449,7 @@ final class KeyboardModel: ObservableObject {
     private func refresh() {
         guard controller != nil else { return }
         if !ipcAvailable {
-            ipcAvailable = store.isAvailable
+            ipcAvailable = store.ipcProven
             if ipcAvailable {
                 store.keyboardSeen = true
                 // Recovered: the retry poll has done its job and can stop.
