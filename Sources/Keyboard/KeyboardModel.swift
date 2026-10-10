@@ -77,6 +77,16 @@ final class KeyboardModel: ObservableObject {
     /// holding the mic key; picking one closes them again.
     @Published private(set) var chipsOpen = false
 
+    /// Which binary this keyboard actually is. iOS keeps the RUNNING
+    /// extension on its old code until the process is recycled, so an
+    /// install replaces the bundle while you keep typing on the previous
+    /// build — and every report about whether a fix worked is really a
+    /// report about which build was running. Readable from Bundle.main,
+    /// so it works when nothing else does.
+    var keyboardBuildLabel: String {
+        "kb " + (Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")
+    }
+
     var stripChips: [StripChipsView.Chip] {
         guard chipsOpen else { return [] }
         var chips: [StripChipsView.Chip] = [
@@ -86,6 +96,7 @@ final class KeyboardModel: ObservableObject {
         if canRetranscribe { chips.append(.init(title: "Again", symbol: nil)) }
         chips.append(.init(title: "End", symbol: nil))
         chips.append(.init(title: "Settings", symbol: nil))
+        chips.append(.init(title: keyboardBuildLabel, symbol: nil))
         return chips
     }
 
@@ -95,6 +106,7 @@ final class KeyboardModel: ObservableObject {
         let chips = stripChips
         guard chips.indices.contains(index) else { return }
         switch chips[index].title {
+        case keyboardBuildLabel: chipsOpen = false   // a label, but never a dead tap
         case languageLabel: cycleLanguage()
         case "Again": retranscribeLast()
         case "End": endSessionTapped()
