@@ -1,5 +1,7 @@
 build/
 build-sim/
+# Any other derived-data dir: devtest (device runs), simsigned, etc.
+build-*/
 HopBoard.xcodeproj/
 .DS_Store
 Sources/App/Info.plist

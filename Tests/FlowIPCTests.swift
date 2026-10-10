@@ -357,3 +357,58 @@ final class IPCProbeTests: XCTestCase {
         XCTAssertTrue(store.ipcProven, "but the app is demonstrably being heard")
     }
 }
+
+/// Against the REAL keychain, in the simulator's test host. Every other
+/// test here uses an in-memory backend, which is why three rewrites of
+/// these primitives could pass a green suite while breaking every read
+/// and write on the device.
+final class RealKeychainTests: XCTestCase {
+    private let store = FlowStore()
+
+    /// `make test` builds with CODE_SIGNING_ALLOWED=NO, so the host
+    /// carries no entitlements and the shared access group is denied
+    /// outright (-34018). Skip rather than fail — but skip LOUDLY, because
+    /// a suite that silently cannot reach the keychain is exactly how
+    /// three rewrites of these primitives shipped green.
+    override func setUpWithError() throws {
+        guard store.isAvailable else {
+            throw XCTSkip("no keychain here: \(store.probeDiagnosis). "
+                          + "Run signed to exercise the real channel.")
+        }
+    }
+
+    func testTheChannelRoundTrips() {
+        XCTAssertTrue(store.isAvailable,
+                      "real keychain round trip failed: \(store.probeDiagnosis)")
+    }
+
+    func testValuesSurviveAWriteAndComeBackIntact() {
+        let mark = UUID().uuidString
+        store.modelStatus = mark
+        XCTAssertEqual(store.modelStatus, mark)
+        store.modelStatus = ""
+    }
+
+    /// The exact shape the app↔keyboard link needs: one side writes a
+    /// result, the other reads it through its OWN FlowStore instance.
+    func testOneStoreSeesWhatAnotherWrote() {
+        let writer = FlowStore()
+        let reader = FlowStore()
+        writer.clearResults()
+        let result = FlowResult(id: UUID(), text: "hello from the app",
+                                finishedAt: Date().timeIntervalSince1970)
+        writer.append(result)
+        XCTAssertEqual(reader.results.last?.text, "hello from the app",
+                       "a second FlowStore cannot see the first one's write")
+        writer.clearResults()
+    }
+
+    func testHeartbeatCrossesToo() {
+        let writer = FlowStore()
+        writer.state = .ready
+        writer.heartbeat = Date()
+        XCTAssertTrue(FlowStore().sessionAlive,
+                      "the heartbeat does not reach a second store")
+        writer.state = .idle
+    }
+}

@@ -23,7 +23,7 @@ SIMAPP = build-sim/Build/Products/Debug-iphonesimulator/HopBoard.app
 BUILDNO = $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 VERSION_FLAGS = CURRENT_PROJECT_VERSION=$(BUILDNO)
 
-.PHONY: gen build test sim simbuild install shot clean
+.PHONY: gen build test devtest sim simbuild install shot clean
 
 gen:
 	xcodegen
@@ -34,6 +34,16 @@ build: gen
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
 	  -destination 'generic/platform=iOS' -allowProvisioningUpdates \
 	  -derivedDataPath build $(VERSION_FLAGS) build
+
+# The ONLY place the real keychain can be exercised. The simulator cannot:
+# a team-prefixed access group needs a real provisioning profile, and a
+# signed sim build comes out with an empty entitlements dict, so every
+# SecItem call there returns -34018. That blind spot is how three rewrites
+# of the IPC primitives shipped against a green suite — every other test
+# uses an in-memory backend. Run this before touching FlowIPC.swift.
+devtest: gen
+	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) \
+	  -destination 'platform=iOS,id=$(DEVICE)' -derivedDataPath build-devtest
 
 test: gen
 	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) \
