@@ -12,6 +12,14 @@ SCHEME = HopBoard
 APP = build/Build/Products/Release-iphoneos/HopBoard.app
 SIMAPP = build-sim/Build/Products/Debug-iphonesimulator/HopBoard.app
 # Every install identifiable on the device (learned from hop-ios).
+#
+# NOTE, learned the hard way: this is evaluated when make RUNS, so a build
+# made before committing is stamped with the count from before the commit.
+# Claiming otherwise afterwards sent Jian toggling Full Access and
+# re-adding the keyboard to chase an "iOS caches the extension" lag that
+# did not exist — the keyboard had been reporting its true build all
+# along. Commit first, then `make install`, and the number on the device
+# matches `git rev-list --count HEAD`.
 BUILDNO = $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 VERSION_FLAGS = CURRENT_PROJECT_VERSION=$(BUILDNO)
 
