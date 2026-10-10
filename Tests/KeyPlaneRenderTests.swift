@@ -148,3 +148,51 @@ final class HostingCoverageTests: XCTestCase {
                       + "first at \(unreachable.first ?? .zero)")
     }
 }
+
+/// Dictation ran correctly for days with nothing on screen to show it,
+/// because the strip's three tenants were ranked wrong: a chips row left
+/// open — one tap on the strip does that — hid the recording UI.
+@MainActor
+final class StripPriorityTests: XCTestCase {
+    private func plane(status: DictationStatus,
+                       chips: [StripChipsView.Chip]) -> KeyPlaneView {
+        let plane = KeyPlaneView(frame: CGRect(x: 0, y: 0, width: 393, height: 258))
+        plane.seedContext("")
+        plane.chips = chips
+        plane.status = status
+        plane.layoutIfNeeded()
+        return plane
+    }
+
+    private func visibleStrip(_ plane: KeyPlaneView) -> UIView? {
+        plane.subviews.first {
+            ($0 is DictationStripView || $0 is StripChipsView || $0 is CandidateBarView)
+                && !$0.isHidden
+        }
+    }
+
+    func testRecordingIsVisibleEvenWithTheChipsOpen() {
+        let view = visibleStrip(plane(status: DictationStatus(phase: .recording,
+                                                              startedAt: Date()),
+                                      chips: [.init(title: "EN", symbol: nil),
+                                              .init(title: "Formal", symbol: nil)]))
+        XCTAssertTrue(view is DictationStripView,
+                      "the chips hid the recording UI again")
+    }
+
+    func testTheChipsStillShowWhenNothingIsDictating() {
+        let view = visibleStrip(plane(status: DictationStatus(),
+                                      chips: [.init(title: "EN", symbol: nil)]))
+        XCTAssertTrue(view is StripChipsView)
+    }
+
+    /// And it must be seen, not merely unhidden.
+    func testTheRecordingStripIsOpaque() {
+        let plane = plane(status: DictationStatus(phase: .recording, startedAt: Date()),
+                          chips: [])
+        let strip = plane.subviews.compactMap { $0 as? DictationStripView }.first
+        let alpha = strip?.backgroundColor?.cgColor.alpha ?? 0
+        XCTAssertEqual(alpha, 1, accuracy: 0.01, "the recording strip is see-through")
+        XCTAssertGreaterThan(strip?.frame.height ?? 0, 20)
+    }
+}

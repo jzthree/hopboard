@@ -36,6 +36,11 @@ final class DictationStripView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isHidden = true
+        // Opaque. Transparent chrome over a transparent key plane is how
+        // "is it even running?" happens — and the recording state is the
+        // one thing in this keyboard that has to be unmissable.
+        backgroundColor = UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(white: 0.16, alpha: 1) : UIColor(white: 0.90, alpha: 1) }
         dot.backgroundColor = .systemRed
         dot.layer.cornerRadius = 4
         title.font = .systemFont(ofSize: 15, weight: .medium)

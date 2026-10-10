@@ -196,11 +196,18 @@ final class KeyPlaneView: UIView {
     /// you explicitly opened, then anything dictation has to say, then
     /// autocomplete.
     private func updateStripVisibility() {
-        let chipsOpen = !chips.isEmpty
+        // DICTATION OUTRANKS EVERYTHING. It used to sit below the chips,
+        // so a chips row left open — which one tap on the strip does —
+        // silently swallowed the recording UI while dictation ran
+        // perfectly underneath it. The one thing that must never be
+        // invisible is the one that was.
         let dictating = status.phase != .none
+        let chipsOpen = !chips.isEmpty && !dictating
+        strip.isHidden = !dictating
         chipsView.isHidden = !chipsOpen
-        strip.isHidden = chipsOpen || !dictating
-        candidates.isHidden = chipsOpen || dictating || candidates.isEmpty
+        candidates.isHidden = dictating || chipsOpen || candidates.isEmpty
+        if dictating { bringSubviewToFront(strip) }
+        if showsTouchLog { bringSubviewToFront(touchLog) }
     }
 
     /// A tapped slot. The literal is a refusal, and a refusal is a lesson:

@@ -384,6 +384,7 @@ final class KeyboardModel: ObservableObject {
             openApp?()
             return
         }
+        chipsOpen = false   // never let the controls hide what they start
         micTapped()
         syncPollTimer()
     }
