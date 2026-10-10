@@ -58,7 +58,15 @@ final class KeyboardModel: ObservableObject {
         case .loading(let status):
             return DictationStatus(phase: .message(status.isEmpty ? "Preparing model…" : status))
         case .noSession:
-            return DictationStatus(phase: .message("Tap to start a HopBoard session"))
+            // Whether the app's heartbeat is READABLE here separates the
+            // two reasons there is no session, and they want opposite
+            // fixes. "never" means nothing the app writes reaches this
+            // process — the channel. A number means the channel works and
+            // the app simply is not running a session.
+            let age = Date().timeIntervalSince(store.heartbeat)
+            let beat = age > 60 * 60 * 24 ? "never" : String(format: "%.0fs", age)
+            return DictationStatus(
+                phase: .message("Tap to start a session · heard app: \(beat)"))
         default:
             guard pendingResult != nil else { return DictationStatus() }
             return DictationStatus(phase: .pending, canRetranscribe: canRetranscribe)
